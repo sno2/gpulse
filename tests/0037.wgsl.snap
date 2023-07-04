@@ -1,0 +1,8 @@
+error: Expected expression, found 'for'.
+
+   for (var i: i32 = 0; i < 2 ; i++) {
+   ~~~
+error: Expected statement, found 'for'.
+
+   for (var i: i32 = 0; i < 2 ; i++) {
+   ~~~

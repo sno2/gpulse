@@ -1,0 +1,1 @@
+ast.Node{ .fn_decl = ast.FnDecl{ .name = ast.Span{ .start = 3, .end = 24 }, .params = {  }, .ret = null, .scope = { ast.Node{ .loop = ast.Loop{ .attributes = null, .scope = {  } } } } } } 

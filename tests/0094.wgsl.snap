@@ -1,0 +1,8 @@
+error: Expected expression, found 'for'.
+
+  for (var i = 0u; i < 10; i++) {
+  ~~~
+error: Expected statement, found 'for'.
+
+  for (var i = 0u; i < 10; i++) {
+  ~~~

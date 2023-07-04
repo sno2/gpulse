@@ -1,0 +1,1 @@
+ast.Node{ .const_decl = ast.ConstDecl{ .name = ast.Span{ .start = 6, .end = 7 }, .typ = null, .value = ast.Node{ .number_literal = ast.Span{ .start = 10, .end = 13 } } } } ast.Node{ .const_decl = ast.ConstDecl{ .name = ast.Span{ .start = 53, .end = 54 }, .typ = null, .value = ast.Node{ .number_literal = ast.Span{ .start = 57, .end = 60 } } } } 
