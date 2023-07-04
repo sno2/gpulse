@@ -235,11 +235,12 @@ fn resolveTypeOptions(self: *Self, env: *Env, typ: Node, comptime fail_unresolve
 const DependencyNode = struct {
     name: ast.Span,
     value: Node,
-    children: union {
+    visited: bool = false,
+    children: union(enum) {
         // First stage
         names: []ast.Span,
         // Second stage
-        nodes: []DependencyNode,
+        nodes: []*DependencyNode,
     },
 };
 
@@ -287,26 +288,23 @@ pub fn loadTypes(self: *Self, env: *Env, scope: []const Node) !void {
     var iter1 = graph.valueIterator();
     while (iter1.next()) |value| {
         var names = value.children.names;
-        var nodes = try allocator.alloc(DependencyNode, names.len);
+        var nodes = try allocator.alloc(*DependencyNode, names.len);
 
         for (names, 0..) |name, i| {
             // TODO: handle unknown type name
-            nodes[i] = graph.get(name) orelse @panic("");
+            nodes[i] = graph.getPtr(name) orelse @panic("");
         }
 
         value.children = .{ .nodes = nodes };
     }
 
     // Sort the dependencies using a topological sort.
-    var visited = std.AutoHashMap(ast.Span, void).init(allocator);
-    try visited.ensureTotalCapacity(@truncate(graph.count()));
-
     var stack = try std.ArrayList(DependencyNode).initCapacity(allocator, graph.count());
 
     var iter2 = graph.valueIterator();
     while (iter2.next()) |value| {
-        if (!visited.contains(value.name)) {
-            dfs(value, &visited, &stack);
+        if (!value.visited) {
+            dfs(value, &stack);
         }
     }
 
@@ -320,12 +318,14 @@ pub fn loadTypes(self: *Self, env: *Env, scope: []const Node) !void {
 }
 
 // Depth-first search on the graph.
-fn dfs(node: *const DependencyNode, visited: *std.AutoHashMap(ast.Span, void), stack: *std.ArrayList(DependencyNode)) void {
-    visited.putAssumeCapacity(node.name, {});
+fn dfs(node: *DependencyNode, stack: *std.ArrayList(DependencyNode)) void {
+    node.visited = true;
 
-    for (node.children.nodes) |child| {
-        if (!visited.contains(child.name)) {
-            dfs(&child, visited, stack);
+    var i: usize = 0;
+    while (i < node.children.nodes.len) : (i += 1) {
+        var child = node.children.nodes.ptr[i];
+        if (!child.visited) {
+            dfs(child, stack);
         }
     }
 
