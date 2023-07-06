@@ -20,6 +20,13 @@ pub const Type = union(enum) {
     array: *Array,
     ref: *MemoryView,
     ptr: *MemoryView,
+    fn_decl: *FnDecl,
+    atomic: *Atomic,
+
+    pub const FnDecl = struct {
+        params: []Type,
+        ret: ?Type,
+    };
 
     pub fn format(self: Type, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         switch (self) {
@@ -40,6 +47,24 @@ pub const Type = union(enum) {
                 }
                 try writer.writeAll(">");
             },
+            .fn_decl => |x| {
+                try writer.writeAll("fn(");
+
+                for (x.params[0..x.params.len -| 1]) |param| {
+                    try writer.print("{}, ", .{param});
+                }
+
+                if (x.params.len != 0) {
+                    try writer.print("{})", .{x.params[x.params.len - 1]});
+                } else {
+                    try writer.writeAll(")");
+                }
+
+                if (x.ret) |ret| {
+                    try writer.print(" -> {}", .{ret});
+                }
+            },
+            .atomic => |x| try writer.print("atomic<{}>", .{x.inner}),
             else => @panic("."),
         }
     }
@@ -105,17 +130,16 @@ pub const MemoryView = struct {
     access_mode: ast.AccessMode,
 };
 
-pub const TypeBinding = union(enum) {
-    alias: Type,
-    template: *TypeGenerator,
-};
-
 pub const Binding = union(enum) {
     binding: Type,
 };
 
+pub const Atomic = struct {
+    inner: Type,
+};
+
 pub const Env = struct {
-    types: std.StringHashMapUnmanaged(TypeBinding) = .{},
+    types: std.StringHashMapUnmanaged(Type) = .{},
     bindings: std.StringHashMapUnmanaged(Binding) = .{},
     parent: ?*Env = null,
 
@@ -124,7 +148,7 @@ pub const Env = struct {
             if (env.parent) |parent| parent.getBinding(name) else null;
     }
 
-    pub fn getType(env: *const Env, name: []const u8) ?TypeBinding {
+    pub fn getType(env: *const Env, name: []const u8) ?Type {
         return env.types.get(name) orelse
             if (env.parent) |parent| parent.getType(name) else null;
     }
@@ -134,14 +158,14 @@ allocator: std.mem.Allocator,
 source: []const u8,
 reporter: *Reporter,
 extensions: Extensions = .{},
-types: std.StringHashMapUnmanaged(TypeBinding) = .{},
+types: std.StringHashMapUnmanaged(Type) = .{},
 
 pub fn loadGlobalTypes(self: *Self) !void {
     var map = &.{
-        .{ "bool", .{ .alias = .bool } },
-        .{ "i32", .{ .alias = .i32 } },
-        .{ "u32", .{ .alias = .u32 } },
-        .{ "f32", .{ .alias = .f32 } },
+        .{ "bool", .bool },
+        .{ "i32", .i32 },
+        .{ "u32", .u32 },
+        .{ "f32", .f32 },
     };
 
     try self.types.ensureTotalCapacity(self.allocator, map.len);
@@ -150,7 +174,7 @@ pub fn loadGlobalTypes(self: *Self) !void {
     }
 
     if (self.extensions.enable_f16) {
-        try self.types.putNoClobber(self.allocator, "f16", .{ .alias = .f16 });
+        try self.types.putNoClobber(self.allocator, "f16", .f16);
     }
 }
 
@@ -177,7 +201,13 @@ pub fn inferExpr(self: *Self, env: *Env, expr: Node) !Type {
 
             return if (typ) |t| switch (t) {
                 .binding => |ty| ty,
-            } else .err;
+            } else {
+                self.reporter.add(Diagnostic{
+                    .span = span,
+                    .kind = .{ .unknown_name = self.readSpan(span) },
+                });
+                return .err;
+            };
         },
         .number_literal => |data| switch (data.kind) {
             .u32 => .{ .u32 = {} },
@@ -197,36 +227,121 @@ pub fn inferExpr(self: *Self, env: *Env, expr: Node) !Type {
 
             return .{ .u32 = {} };
         },
+        .call => |data| {
+            var callee = try self.resolveType(env, data.callee);
+
+            switch (callee) {
+                .fn_decl => |fn_decl| {
+                    if (data.args.len > fn_decl.params.len) {
+                        self.reporter.add(Diagnostic{ .span = ast.Span.init(
+                            data.args[fn_decl.params.len].span().start,
+                            data.args[data.args.len -| 1].span().end,
+                        ), .kind = .{ .expected_n_args = .{
+                            .expected = @truncate(fn_decl.params.len),
+                            .got = @truncate(data.args.len),
+                        } } });
+                    } else if (data.args.len < fn_decl.params.len) {
+                        self.reporter.add(Diagnostic{ .span = expr.span(), .kind = .{ .expected_n_args = .{
+                            .expected = @truncate(fn_decl.params.len),
+                            .got = @truncate(data.args.len),
+                        } } });
+                    }
+
+                    var end = @min(data.args.len, fn_decl.params.len);
+                    for (data.args[0..end], fn_decl.params[0..end]) |arg, param_t| {
+                        var arg_t = try self.inferExpr(env, arg);
+                        if (!Type.isConversionPossible(arg_t, param_t)) {
+                            self.reporter.add(Diagnostic{
+                                .span = arg.span(),
+                                .kind = .{ .not_assignable = .{
+                                    .expected = param_t,
+                                    .got = arg_t,
+                                } },
+                            });
+                        }
+                    }
+
+                    for (data.args[end..]) |arg| {
+                        _ = try self.inferExpr(env, arg);
+                    }
+
+                    return fn_decl.ret orelse .err;
+                },
+                else => {
+                    self.reporter.add(Diagnostic{
+                        .span = data.callee.span(),
+                        .kind = .{ .not_callable_type = callee },
+                    });
+
+                    for (data.args) |arg_t| {
+                        _ = try self.inferExpr(env, arg_t);
+                    }
+
+                    return .err;
+                },
+            }
+        },
         else => std.debug.panic("Unimplemented: {}", .{expr}),
     };
 }
 
-pub inline fn resolveType(self: *Self, env: *Env, typ: Node) !Type {
-    return self.resolveTypeOptions(env, typ, true);
-}
+const BuiltinTemplate = enum {
+    atomic,
 
-pub const UnresolvedError = error{Unresolved};
+    pub const Map = std.ComptimeStringMap(BuiltinTemplate, .{
+        .{ "atomic", .atomic },
+    });
+};
 
-fn resolveTypeOptions(self: *Self, env: *Env, typ: Node, comptime fail_unresolved: bool) UnresolvedError!Type {
-    _ = env;
+fn resolveType(self: *Self, env: *Env, typ: Node) !Type {
     return switch (typ) {
         .identifier => |span| {
             var name = self.readSpan(span);
-            var decl = self.types.get(name);
+            var t = self.types.get(name) orelse {
+                self.reporter.add(Diagnostic{
+                    .span = span,
+                    .kind = .{ .unknown_type = name },
+                });
+                return .err;
+            };
 
-            if (decl == null or decl.? != .alias) {
-                if (fail_unresolved) {
-                    self.reporter.add(Diagnostic{
-                        .span = span,
-                        .kind = .{ .unknown_type = name },
-                    });
-                    return .err;
-                } else {
-                    return error.Unresolved;
-                }
+            return t;
+        },
+        .fn_decl => |data| {
+            var ptr = try self.allocator.create(Type.FnDecl);
+            var params = try self.allocator.alloc(Type, data.params.len);
+            ptr.ret = if (data.ret) |ret| try self.resolveType(env, ret) else null;
+            ptr.params = params;
+            for (data.params, 0..) |node, i| {
+                params[i] = try self.resolveType(env, node.labeled_type.typ);
             }
+            return Type{ .fn_decl = ptr };
+        },
+        .template => |data| {
+            const kind = BuiltinTemplate.Map.get(self.readSpan(data.name)) orelse {
+                self.reporter.add(Diagnostic{
+                    .span = data.name,
+                    .kind = .{ .unknown_type = self.readSpan(data.name) },
+                });
+                return .err;
+            };
 
-            return decl.?.alias;
+            switch (kind) {
+                .atomic => {
+                    if (data.args.len != 1) {
+                        self.reporter.add(Diagnostic{
+                            .span = data.name,
+                            .kind = .{ .expected_n_template_args = .{
+                                .expected = 1,
+                                .got = @truncate(data.args.len),
+                            } },
+                        });
+                    }
+                    var ptr = try self.allocator.create(Atomic);
+                    ptr.* = .{ .inner = try self.resolveType(env, data.args[0]) };
+                    return Type{ .atomic = ptr };
+                },
+            }
         },
         else => std.debug.panic("Unimplemented: {}", .{typ}),
     };
@@ -238,10 +353,21 @@ const DependencyNode = struct {
     visited: bool = false,
     children: union(enum) {
         // First stage
-        names: []ast.Span,
+        refs: []DependencyNode.Ref,
         // Second stage
         nodes: []*DependencyNode,
     },
+
+    pub const Ref = struct {
+        name: ast.Span,
+        kind: Kind,
+    };
+
+    pub const Kind = enum {
+        constant,
+        alias,
+        function,
+    };
 };
 
 /// Loads all global aliases.
@@ -249,31 +375,56 @@ pub fn loadTypes(self: *Self, env: *Env, scope: []const Node) !void {
     var fallback = std.heap.stackFallback(1024, self.allocator);
     var allocator = fallback.get();
 
-    var graph = std.AutoHashMap(ast.Span, DependencyNode).init(allocator);
+    const DependencyKey = struct {
+        name: []const u8,
+        kind: DependencyNode.Kind,
+    };
+
+    const DependencyContext = struct {
+        pub fn hash(_: @This(), s: DependencyKey) u64 {
+            var seed = std.hash.Wyhash.init(0);
+            seed.update(s.name);
+            seed.update(&.{@intFromEnum(s.kind)});
+            return seed.final();
+        }
+
+        pub fn eql(ctx: @This(), a: DependencyKey, b: DependencyKey) bool {
+            return ctx.hash(a) == ctx.hash(b);
+        }
+    };
+
+    var graph = std.HashMap(DependencyKey, DependencyNode, DependencyContext, 80).init(allocator);
 
     // Create the vertices for the dependency nodes.
     for (scope) |node| {
         switch (node) {
             .type_alias => |data| {
-                switch (data.value) {
-                    .identifier => |span| {
-                        var name = self.readSpan(span);
-                        if (self.types.contains(name)) {
-                            try graph.put(span, DependencyNode{
-                                .name = data.name,
-                                .value = data.value,
-                                .children = .{ .names = &.{} },
-                            });
-                        } else {
-                            try graph.put(span, DependencyNode{
-                                .name = data.name,
-                                .value = data.value,
-                                .children = .{ .names = try allocator.dupe(ast.Span, &.{span}) },
-                            });
-                        }
-                    },
-                    else => @panic("Todo"),
+                try graph.put(.{
+                    .name = self.readSpan(data.name),
+                    .kind = .alias,
+                }, DependencyNode{
+                    .name = data.name,
+                    .value = data.value,
+                    .children = .{ .refs = try self.getDependencies(allocator, data.value) },
+                });
+            },
+            .fn_decl => |data| {
+                var children = std.ArrayList(DependencyNode.Ref).init(allocator);
+                for (data.params) |param_t| {
+                    try children.appendSlice(try self.getDependencies(allocator, param_t));
                 }
+                if (data.ret) |ret_t| {
+                    try children.appendSlice(try self.getDependencies(allocator, ret_t));
+                }
+
+                try graph.put(.{
+                    .name = self.readSpan(data.name),
+                    .kind = .alias,
+                }, DependencyNode{
+                    .name = data.name,
+                    .value = node,
+                    .children = .{ .refs = try children.toOwnedSlice() },
+                });
             },
             else => {},
         }
@@ -285,17 +436,21 @@ pub fn loadTypes(self: *Self, env: *Env, scope: []const Node) !void {
     }
 
     // Create the children for each of the dependency nodes.
-    var iter1 = graph.valueIterator();
-    while (iter1.next()) |value| {
-        var names = value.children.names;
-        var nodes = try allocator.alloc(*DependencyNode, names.len);
+    var iter1 = graph.iterator();
+    while (iter1.next()) |entry| {
+        var refs = entry.value_ptr.children.refs;
+        var nodes = try std.ArrayList(*DependencyNode).initCapacity(self.allocator, refs.len);
 
-        for (names, 0..) |name, i| {
-            // TODO: handle unknown type name
-            nodes[i] = graph.getPtr(name) orelse @panic("");
+        for (refs) |ref| {
+            nodes.appendAssumeCapacity(
+                graph.getPtr(.{
+                    .name = self.readSpan(ref.name),
+                    .kind = ref.kind,
+                }) orelse continue, // We will report the issue later.
+            );
         }
 
-        value.children = .{ .nodes = nodes };
+        entry.value_ptr.children = .{ .nodes = try nodes.toOwnedSlice() };
     }
 
     // Sort the dependencies using a topological sort.
@@ -310,10 +465,35 @@ pub fn loadTypes(self: *Self, env: *Env, scope: []const Node) !void {
 
     // Emit the type declarations.
     try self.types.ensureUnusedCapacity(self.allocator, @truncate(stack.items.len));
-    while (stack.popOrNull()) |node| {
-        self.types.putAssumeCapacity(self.readSpan(node.name), .{
-            .alias = try self.resolveType(env, node.value),
-        });
+    for (stack.items) |node| {
+        self.types.putAssumeCapacity(self.readSpan(node.name), try self.resolveType(env, node.value));
+    }
+}
+
+fn getDependencies(self: *Self, allocator: std.mem.Allocator, node: Node) ![]DependencyNode.Ref {
+    switch (node) {
+        .identifier => |span| {
+            var name = self.readSpan(span);
+            if (self.types.contains(name)) {
+                return &.{};
+            } else {
+                return try allocator.dupe(DependencyNode.Ref, &.{.{
+                    .name = span,
+                    .kind = .alias,
+                }});
+            }
+        },
+        .labeled_type => |data| {
+            return self.getDependencies(allocator, data.typ);
+        },
+        .template => |data| {
+            var deps = std.ArrayList(DependencyNode.Ref).init(allocator);
+            for (data.args) |arg| {
+                try deps.appendSlice(try self.getDependencies(allocator, arg));
+            }
+            return deps.toOwnedSlice();
+        },
+        else => std.debug.panic("unimplemented: {}", .{node}),
     }
 }
 
@@ -348,7 +528,7 @@ pub fn check(self: *Self, env: *Env, node: Node) !void {
                     var t = try self.resolveType(env, typ);
                     if (!Type.isConversionPossible(value_t, t)) {
                         self.reporter.add(Diagnostic{
-                            .span = data.name,
+                            .span = value.span(),
                             .kind = .{ .not_assignable = .{
                                 .expected = t,
                                 .got = value_t,
@@ -364,6 +544,28 @@ pub fn check(self: *Self, env: *Env, node: Node) !void {
                 _ = try self.putBinding(env, name, Binding{ .binding = t });
             }
         },
+        .let_decl => |data| {
+            var name = self.readSpan(data.name);
+
+            var value = data.value;
+            var value_t = try self.inferExpr(env, value);
+
+            if (data.typ) |typ| {
+                var t = try self.resolveType(env, typ);
+                if (!Type.isConversionPossible(value_t, t)) {
+                    self.reporter.add(Diagnostic{
+                        .span = value.span(),
+                        .kind = .{ .not_assignable = .{
+                            .expected = t,
+                            .got = value_t,
+                        } },
+                    });
+                }
+                _ = try self.putBinding(env, name, Binding{ .binding = t });
+            } else {
+                _ = try self.putBinding(env, name, Binding{ .binding = value_t });
+            }
+        },
         .var_decl => |data| {
             var name = self.readSpan(data.name);
             var value_typ = if (data.value) |expr|
@@ -376,6 +578,17 @@ pub fn check(self: *Self, env: *Env, node: Node) !void {
         .fn_decl => |data| {
             for (data.scope) |n| {
                 try self.check(env, n);
+            }
+        },
+        .call => |data| {
+            var callee = try self.resolveType(env, data.callee);
+
+            if (callee != .fn_decl) {
+                self.reporter.add(Diagnostic{
+                    .span = data.callee.span(),
+                    .kind = .{ .not_callable_type = callee },
+                });
+                return;
             }
         },
         else => std.debug.panic("Unimplemented: {}", .{node}),

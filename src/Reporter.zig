@@ -30,6 +30,18 @@ pub const Diagnostic = struct {
             got: Type,
         },
         unknown_type: []const u8,
+        unknown_template: []const u8,
+        not_callable_type: Type,
+        expected_n_args: struct {
+            expected: u32,
+            got: u32,
+        },
+        unknown_name: []const u8,
+        expected_n_template_args: struct {
+            expected: u32,
+            expected_max: ?u32 = null,
+            got: u32,
+        },
     },
 
     pub fn format(diag: Diagnostic, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
@@ -49,8 +61,19 @@ pub const Diagnostic = struct {
             .invalid_override_statement => try writer.writeAll("Override declarations are only allowed in the global scope."),
 
             // Analyzer errors
-            .not_assignable => |x| try writer.print("Type '{}' is not assignable to '{}'.", .{ x.got, x.expected }),
+            .not_assignable => |x| try writer.print("Expected '{}', found '{}'.", .{ x.expected, x.got }),
             .unknown_type => |x| try writer.print("Type '{s}' not found in this scope.", .{x}),
+            .unknown_template => |x| try writer.print("Template '{s}' not found in this scope.", .{x}),
+            .not_callable_type => |x| try writer.print("Type '{}' is not a callable type.", .{x}),
+            .expected_n_args => |x| try writer.print("Expected {} argument{s}, got {}.", .{ x.expected, if (x.expected != 1) "s" else "", x.got }),
+            .unknown_name => |x| try writer.print("'{s}' not found in this scope.", .{x}),
+            .expected_n_template_args => |x| {
+                if (x.expected_max) |max| {
+                    try writer.print("Expected {} to {} template arguments, got {}.", .{ x.expected, max, x.got });
+                } else {
+                    try writer.print("Expected {} template argument{s}, got {}.", .{ x.expected, if (x.expected != 1) "s" else "", x.got });
+                }
+            },
         }
     }
 };

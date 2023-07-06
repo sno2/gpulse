@@ -30,8 +30,11 @@ pub fn main() !void {
 
     try reporter.dump(std.io.getStdErr().writer());
 
-    var env_iter = env.bindings.iterator();
-    while (env_iter.next()) |entry| {
-        std.debug.print("'{s}': {}\n", .{ entry.key_ptr.*, entry.value_ptr });
+    var type_iter = inspector.types.iterator();
+
+    const spaces: [8]u8 = .{' '} ** 8;
+
+    while (type_iter.next()) |entry| {
+        std.debug.print("{s}{s} = {}\n", .{ spaces[0..8 -| entry.key_ptr.len], entry.key_ptr.*, entry.value_ptr });
     }
 }
