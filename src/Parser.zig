@@ -232,7 +232,11 @@ inline fn parseSimpleExpr(p: *Parser) Error!Node {
             while (true) {
                 if (p.lex.has_newline_before) break;
                 switch (p.lex.token) {
-                    .t_eof, .t_semi => break,
+                    .t_eof => break,
+                    .t_semi => {
+                        p.lex.next();
+                        break;
+                    },
                     else => p.lex.next(),
                 }
             }
@@ -375,9 +379,10 @@ fn parseExprRec(p: *Parser, hp: u8) Error!Node {
             },
             .t_dot => {
                 p.lex.next();
+                var name = try p.eat(.t_ident);
                 lhs = try p.create(.member, .{
                     .lhs = lhs,
-                    .rhs = try p.parseExprRec(power),
+                    .rhs = .{ .identifier = name },
                 });
             },
             .t_lbrack => {
@@ -820,6 +825,8 @@ pub fn parseStmt(p: *Parser, ctx: ScopeContext) Error!Node {
                     .span = Span.init(@truncate(start), end),
                     .kind = .{ .invalid_override_statement = {} },
                 });
+                p.expectSemi();
+                return .{ .err = Span.init(@truncate(start), end) };
             }
 
             p.expectSemi();
@@ -885,6 +892,7 @@ pub fn parseStmt(p: *Parser, ctx: ScopeContext) Error!Node {
             });
         },
         .tk_let => {
+            var start = p.lex.start;
             p.lex.next();
             var name = try p.eat(.t_ident);
             var typ = if (p.lex.token == .t_colon) blk: {
@@ -893,7 +901,19 @@ pub fn parseStmt(p: *Parser, ctx: ScopeContext) Error!Node {
             } else null;
             try p.expect(.t_assign);
             var value = try p.parseExpr();
+
+            if (!ctx.is_function) {
+                var end: u32 = @truncate(if (p.lex.token == .t_semi) p.lex.index else p.lex.start);
+                p.reporter.add(Diagnostic{
+                    .span = Span.init(@truncate(start), end),
+                    .kind = .invalid_let_statement,
+                });
+                p.expectSemi();
+                return .{ .err = Span.init(@truncate(start), end) };
+            }
+
             p.expectSemi();
+
             return p.create(.let_decl, .{
                 .name = name,
                 .typ = typ,

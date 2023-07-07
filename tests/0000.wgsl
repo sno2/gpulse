@@ -12,6 +12,8 @@ struct LightStorage {
 }
 @group(0) @binding(0) var<storage> lights : LightStorage;
 
+var<private, read> a = 23;
+
 // Texture and sampler.
 @group(1) @binding(0) var baseColorSampler : sampler;
 @group(1) @binding(1) var baseColorTexture : texture_2d<f32>;

@@ -1,0 +1,181 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "WGSL",
+  "scopeName": "source.wgsl",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#attributes"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#variables"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.wgsl",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.wgsl",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.decimal.wgsl",
+          "match": "[0-9]+[eE][+-]?[0-9]+[fh]?"
+        },
+        {
+          "name": "constant.numeric.decimal.wgsl",
+          "match": "[0-9]*\\.[0-9]+([eE][+-]?[0-9]+)?[fh]?"
+        },
+        {
+          "name": "constant.numeric.decimal.wgsl",
+          "match": "[0-9]+\\.[0-9]*([eE][+-]?[0-9]+)?[fh]?"
+        },
+        {
+          "name": "constant.numeric.decimal.wgsl",
+          "match": "[1-9][0-9]*[fh]"
+        },
+        {
+          "name": "constant.numeric.hex.wgsl",
+          "match": "0[xX][0-9a-fA-F]*\\.[0-9a-fA-F]+([pP][+-]?[0-9]+[fh]?)?"
+        },
+        {
+          "name": "constant.numeric.hex.wgsl",
+          "match": "0[xX][0-9a-fA-F]+\\.[0-9a-fA-F]*([pP][+-]?[0-9]+[fh]?)?"
+        },
+        {
+          "name": "constant.numeric.hex.wgsl",
+          "match": "0[xX][0-9a-fA-F]+[pP][+-]?[0-9]+[fh]?"
+        },
+        {
+          "name": "constant.numeric.hex.wgsl",
+          "match": "0[xX][0-9a-fA-F]+[iu]?"
+        },
+        {
+          "name": "constant.numeric.decimal.wgsl",
+          "match": "[1-9][0-9]*[iu]?"
+        },
+        { "name": "constant.numeric.decimal.wgsl", "match": "0[iufh]?" }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.wgsl",
+          "match": "\\b(break|case|const_assert|continue|continuing|default|diagnostic|discard|else|enable|for|if|loop|requires|return|switch|while)\\b"
+        },
+        {
+          "name": "keyword.declaration.wgsl",
+          "match": "\\b(fn|let|const|override|struct|alias)\\b"
+        },
+        {
+          "begin": "(var)\\s*<",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.declaration.wgsl"
+            }
+          },
+          "patterns": [
+            { "include": "#comments" },
+            {
+              "name": "constant.other.wgsl",
+              "match": "\\b(private|storage|workgroup|uniform|read|write|read_write)\\b"
+            },
+            { "include": "#identifiers" }
+          ],
+          "end": ">"
+        },
+        {
+          "name": "keyword.declaration.wgsl",
+          "match": "\\bvar\\b"
+        },
+        {
+          "name": "constant.other.wgsl",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "markup.strikethrough.wgsl",
+          "match": "\\b(NULL|Self|abstract|active|alignas|alignof|as|asm|asm_fragment|async|attribute|auto|await|become|binding_array|cast|catch|class|co_await|co_return|co_yield|coherent|column_major|common|compile|compile_fragment|concept|const_cast|consteval|constexpr|constinit|crate|debugger|decltype|delete|demote|demote_to_helper|do|dynamic_cast|enum|explicit|export|extends|extern|external|fallthrough|filter|final|finally|friend|from|fxgroup|get|goto|groupshared|highp|impl|implements|import|inline|instanceof|interface|layout|lowp|macro|macro_rules|match|mediump|meta|mod|module|move|mut|mutable|namespace|new|nil|noexcept|noinline|nointerpolation|noperspective|null|nullptr|of|operator|package|packoffset|partition|pass|patch|pixelfragment|precise|precision|premerge|priv|protected|pub|public|readonly|ref|regardless|register|reinterpret_cast|require|resource|restrict|self|set|shared|sizeof|smooth|snorm|static|static_assert|static_cast|std|subroutine|super|target|template|this|thread_local|throw|trait|try|type|typedef|typeid|typename|typeof|union|unless|unorm|unsafe|unsized|use|using|varying|virtual|volatile|wgsl|where|with|writeonly|yield)\\b"
+        },
+        {
+          "name": "entity.name.type.wgsl",
+          "match": "\\b(u32|i32|f32|f16|bool|atomic|array|vec2i|vec3i|vec4i|vec2u|vec3u|vec4u|vec2f|vec3f|vec4f|vec2h|vec3h|vec4h|mat2x2f|mat2x3f|mat2x4f|mat3x2f|mat3x3f|mat3x4f|mat4x2f|mat4x3f|mat4x4f|mat2x2h|mat2x3h|mat2x4h|mat3x2h|mat3x3h|mat3x4h|mat4x2h|mat4x3h|mat4x4h|texture_2d|ptr|sampler)\\b"
+        },
+        {
+          "name": "entity.name.type.wgsl",
+          "match": "\\bvec([1-9][0-9]*)|([0-9])\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.comparison.wgsl",
+          "match": "==|!=|>|<|>=|<="
+        },
+        {
+          "name": "keyword.operator.assignment.wgsl",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.logical.wgsl",
+          "match": "&&|\\|\\||!"
+        },
+        {
+          "name": "keyword.operator.arithmetic.wgsl",
+          "match": "[+\\-*/%^|&~]"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "captures": {
+            "1": {
+              "name": "entity.name.function.wgsl"
+            }
+          },
+          "match": "\\b([a-zA-Z_][\\w]*)\\s*\\("
+        }
+      ]
+    },
+    "variables": {
+      "patterns": [
+        {
+          "name": "entity.name.type.wgsl",
+          "match": "\\b[A-Z_][\\w]*\\b"
+        },
+        {
+          "name": "variable.other.wgsl",
+          "match": "\\b[a-z_][\\w]*\\b"
+        },
+        {
+          "name": "variable.other.wgsl",
+          "match": "\\b([_\\p{XID_Start}][\\p{XID_Continue}]+)|([\\p{XID_Start}])\\b"
+        }
+      ]
+    }
+  }
+}

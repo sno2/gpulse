@@ -98,6 +98,8 @@ pub const Token = enum {
     t_template_start,
     t_template_end,
 
+    t_unknown,
+
     pub fn format(token: Token, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try writer.writeAll(switch (token) {
             .t_eof => "end of file",
@@ -181,6 +183,7 @@ pub const Token = enum {
             .t_bit_xor => "'^'",
             .t_template_start => "'<'",
             .t_template_end => "'>'",
+            .t_unknown => "unknown character",
         });
     }
 };
@@ -696,7 +699,10 @@ pub fn next(lex: *Lexer) void {
                 } else .t_bit_xor;
             },
             -1 => lex.token = .t_eof,
-            else => @panic("todo"),
+            else => {
+                lex.step();
+                lex.token = .t_unknown;
+            },
         }
 
         break :main;

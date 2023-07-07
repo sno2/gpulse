@@ -1,0 +1,25 @@
+{
+  "name": "gpulse",
+  "displayName": "gpulse",
+  "description": "Intellisense for the WebGPU Shader Language",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "wgsl",
+      "aliases": ["WebGPU Shader Language", "wgsl"],
+      "extensions": [".wgsl"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "wgsl",
+      "scopeName": "source.wgsl",
+      "path": "./syntaxes/wgsl.tmLanguage.json"
+    }]
+  }
+}

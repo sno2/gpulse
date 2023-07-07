@@ -23,6 +23,7 @@ pub const Diagnostic = struct {
         expected_ident_template,
         invalid_expr_statement,
         invalid_override_statement,
+        invalid_let_statement,
 
         // Analyzer errors
         not_assignable: struct {
@@ -34,6 +35,7 @@ pub const Diagnostic = struct {
         not_callable_type: Type,
         expected_n_args: struct {
             expected: u32,
+            expected_max: ?u32 = null,
             got: u32,
         },
         unknown_name: []const u8,
@@ -41,6 +43,11 @@ pub const Diagnostic = struct {
             expected: u32,
             expected_max: ?u32 = null,
             got: u32,
+        },
+        assignment_not_ref: Type,
+        no_member: struct {
+            typ: Type,
+            member: []const u8,
         },
     },
 
@@ -59,13 +66,20 @@ pub const Diagnostic = struct {
             .expected_ident_template => try writer.print("Expected an identifier for template specialization.", .{}),
             .invalid_expr_statement => try writer.print("Cannot use expression as a statement. Consider using '_ = '.", .{}),
             .invalid_override_statement => try writer.writeAll("Override declarations are only allowed in the global scope."),
+            .invalid_let_statement => try writer.writeAll("Let declarations are only allowed in function scopes."),
 
             // Analyzer errors
             .not_assignable => |x| try writer.print("Expected '{}', found '{}'.", .{ x.expected, x.got }),
             .unknown_type => |x| try writer.print("Type '{s}' not found in this scope.", .{x}),
             .unknown_template => |x| try writer.print("Template '{s}' not found in this scope.", .{x}),
             .not_callable_type => |x| try writer.print("Type '{}' is not a callable type.", .{x}),
-            .expected_n_args => |x| try writer.print("Expected {} argument{s}, got {}.", .{ x.expected, if (x.expected != 1) "s" else "", x.got }),
+            .expected_n_args => |x| {
+                if (x.expected_max) |max| {
+                    try writer.print("Expected {} to {} arguments, got {}.", .{ x.expected, max, x.got });
+                } else {
+                    try writer.print("Expected {} argument{s}, got {}.", .{ x.expected, if (x.expected != 1) "s" else "", x.got });
+                }
+            },
             .unknown_name => |x| try writer.print("'{s}' not found in this scope.", .{x}),
             .expected_n_template_args => |x| {
                 if (x.expected_max) |max| {
@@ -74,6 +88,8 @@ pub const Diagnostic = struct {
                     try writer.print("Expected {} template argument{s}, got {}.", .{ x.expected, if (x.expected != 1) "s" else "", x.got });
                 }
             },
+            .assignment_not_ref => |x| try writer.print("Expected a reference for left-hand assignment, got '{}'.", .{x}),
+            .no_member => |x| try writer.print("'{}' does not have a member named '{s}'.", .{ x.typ, x.member }),
         }
     }
 };

@@ -1,6 +1,12 @@
 # gpulse
 
-A linter/LSP/formatter/etc. for the WebGPU Shader Language (WGSL).
+An LSP for the WebGPU Shader Language (WGSL).
+
+## Goals
+
+- Spec 1:1 Compliance
+- Maintain a small binary size
+- High performance
 
 ## Coverage
 
