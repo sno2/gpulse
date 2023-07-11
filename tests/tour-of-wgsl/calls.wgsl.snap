@@ -1,0 +1,2 @@
+ast.Node{ .fn_decl = ast.FnDecl{ .name = ast.Span{ .start = 67, .end = 68 }, .params = {  }, .ret = null, .scope = { ast.Node{ .call = ast.Call{ .callee = ast.Node{ .identifier = ast.Span{ .start = 75, .end = 76 } }, .args = {  } } } } } }
+ast.Node{ .fn_decl = ast.FnDecl{ .name = ast.Span{ .start = 110, .end = 111 }, .params = {  }, .ret = null, .scope = {  } } }

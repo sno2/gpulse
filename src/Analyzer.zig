@@ -15,7 +15,7 @@ pub const Type = union(enum) {
     f16,
     abstract_int,
     abstract_float,
-    vector: *Vector,
+    vec: *Vector,
     matrix: *Matrix,
     array: *Array,
     ref: *MemoryView,
@@ -39,7 +39,7 @@ pub const Type = union(enum) {
             .f16 => try writer.writeAll("f16"),
             .abstract_int => try writer.writeAll("{integer}"),
             .abstract_float => try writer.writeAll("{float}"),
-            .vector => |x| try writer.print("vec<{}>", .{x.item}),
+            .vec => |x| try writer.print("vec<{}>", .{x.item}),
             .matrix => |x| try writer.print("mat{}x{}<{}>", .{ x.width, x.height, x.item }),
             .array => |x| {
                 try writer.print("array<{}", .{x.item});
@@ -75,7 +75,7 @@ pub const Type = union(enum) {
     pub fn isConstructible(self: Type) bool {
         return switch (self) {
             .bool, .abstract_int, .abstract_float, .u32, .i32, .f32, .f16 => true,
-            .vector => |_| true,
+            .vec => |_| true,
             .matrix => |_| true,
             .array => |arr| if (arr.length == null) false else arr.item.isConstructible(),
             // TODO: structures
@@ -110,6 +110,16 @@ pub const Type = union(enum) {
             else => false,
         };
     }
+
+    pub fn alignOf(t: Type) u32 {
+        return switch (t) {
+            .err => 0,
+            .i32, .u32, .f32 => 4,
+            .f16 => 2,
+            .atomic => 4,
+            else => @panic("."),
+        };
+    }
 };
 
 pub const TypeGenerator = struct {
@@ -118,6 +128,7 @@ pub const TypeGenerator = struct {
 
 pub const Vector = struct {
     item: Type,
+    size: u32 = 0,
 };
 
 pub const Matrix = struct {
@@ -186,8 +197,7 @@ pub const OpOverload = struct {
         bool,
         f32,
     },
-    lhs: Type,
-    rhs: Type,
+    operands: [3]Type,
 };
 
 pub fn loadGlobalTypes(self: *Self) !void {
@@ -212,14 +222,16 @@ inline fn readSpan(self: *const Self, span: ast.Span) []const u8 {
     return self.source[span.start..span.end];
 }
 
-pub fn putBinding(self: *Self, env: *Env, name: []const u8, binding: Binding) !bool {
-    var result = try env.bindings.getOrPut(self.allocator, name);
+pub fn putBinding(self: *Self, env: *Env, span: ast.Span, binding: Binding) !void {
+    var result = try env.bindings.getOrPut(self.allocator, self.readSpan(span));
 
     if (result.found_existing) {
-        return true;
+        self.reporter.add(Diagnostic{
+            .span = span,
+            .kind = .{ .already_declared = self.readSpan(span) },
+        });
     } else {
         result.value_ptr.* = binding;
-        return false;
     }
 }
 
@@ -239,22 +251,38 @@ pub fn inferExpr(self: *Self, env: *Env, expr: Node) !Type {
             };
         },
         .number_literal => |data| switch (data.kind) {
-            .u32 => .{ .u32 = {} },
-            .i32 => .{ .i32 = {} },
-            .f32 => .{ .f32 = {} },
-            .f16 => .{ .f16 = {} },
-            .abstract_int => .{ .abstract_int = {} },
-            .abstract_float => .{ .abstract_float = {} },
+            .u32 => .u32,
+            .i32 => .i32,
+            .f32 => .f32,
+            .f16 => .f16,
+            .abstract_int => .abstract_int,
+            .abstract_float => .abstract_float,
         },
-        .boolean_literal => |_| .{ .bool = {} },
+        .boolean_literal => |_| .bool,
         .add, .sub, .mul, .div, .mod => |data| {
             var lhs = try self.inferExpr(env, data.lhs);
             var rhs = try self.inferExpr(env, data.rhs);
 
-            if (!lhs.isNumber()) {}
-            if (!rhs.isNumber()) {}
+            if (!lhs.isNumber() and lhs != .err) {
+                self.reporter.add(Diagnostic{
+                    .span = data.lhs.span(),
+                    .kind = .{ .expected_arithmetic_lhs = .{
+                        .got = lhs,
+                    } },
+                });
+            }
 
-            return .{ .u32 = {} };
+            if (!Type.isConversionPossible(rhs, lhs) and rhs != .err) {
+                self.reporter.add(Diagnostic{
+                    .span = data.rhs.span(),
+                    .kind = .{ .not_assignable = .{
+                        .expected = lhs,
+                        .got = rhs,
+                    } },
+                });
+            }
+
+            return lhs;
         },
         .call => |data| {
             var callee = switch (data.callee) {
@@ -350,6 +378,64 @@ pub fn inferExpr(self: *Self, env: *Env, expr: Node) !Type {
                 },
             }
         },
+        .cmp_and => |data| {
+            var lhs_t = try self.inferExpr(env, data.lhs);
+            var rhs_t = try self.inferExpr(env, data.rhs);
+
+            if (lhs_t != .bool) {
+                self.reporter.add(Diagnostic{
+                    .span = data.lhs.span(),
+                    .kind = .{ .not_assignable = .{
+                        .expected = .bool,
+                        .got = lhs_t,
+                    } },
+                });
+            }
+
+            if (rhs_t != .bool) {
+                self.reporter.add(Diagnostic{
+                    .span = data.rhs.span(),
+                    .kind = .{ .not_assignable = .{
+                        .expected = .bool,
+                        .got = rhs_t,
+                    } },
+                });
+            }
+
+            return .bool;
+        },
+        .equal => |data| {
+            var lhs_t = try self.inferExpr(env, data.lhs);
+            var rhs_t = try self.inferExpr(env, data.rhs);
+
+            if (!Type.isConversionPossible(rhs_t, lhs_t)) {
+                self.reporter.add(Diagnostic{
+                    .span = data.rhs.span(),
+                    .kind = .{ .not_assignable = .{
+                        .expected = lhs_t,
+                        .got = rhs_t,
+                    } },
+                });
+            }
+
+            return .bool;
+        },
+        .not_equal => |data| {
+            var lhs_t = try self.inferExpr(env, data.lhs);
+            var rhs_t = try self.inferExpr(env, data.rhs);
+
+            if (!Type.isConversionPossible(rhs_t, lhs_t)) {
+                self.reporter.add(Diagnostic{
+                    .span = data.rhs.span(),
+                    .kind = .{ .not_assignable = .{
+                        .expected = lhs_t,
+                        .got = rhs_t,
+                    } },
+                });
+            }
+
+            return .bool;
+        },
         .member => |data| {
             var lhs_t = (try self.inferExpr(env, data.lhs)).normalize();
 
@@ -377,13 +463,56 @@ pub fn inferExpr(self: *Self, env: *Env, expr: Node) !Type {
     };
 }
 
-const BuiltinTemplate = enum {
+const BuiltinTemplate = union(enum) {
     atomic,
     array,
+    matrix: packed struct {
+        width: u8,
+        height: u8,
+    },
+    ptr,
+    texture_1d,
+    texture_2d,
+    texture_2d_array,
+    texture_3d,
+    texture_cube,
+    texture_cube_array,
+    texture_multisampled_2d,
+    texture_storage_1d,
+    texture_storage_2d,
+    texture_storage_2d_array,
+    texture_storage_3d,
+    vec2,
+    vec3,
+    vec4,
 
     pub const Map = std.ComptimeStringMap(BuiltinTemplate, .{
         .{ "atomic", .atomic },
         .{ "array", .array },
+        .{ "mat2x2", .{ .matrix = .{ .width = 2, .height = 2 } } },
+        .{ "mat2x3", .{ .matrix = .{ .width = 2, .height = 3 } } },
+        .{ "mat2x4", .{ .matrix = .{ .width = 2, .height = 4 } } },
+        .{ "mat3x2", .{ .matrix = .{ .width = 3, .height = 2 } } },
+        .{ "mat3x3", .{ .matrix = .{ .width = 3, .height = 3 } } },
+        .{ "mat3x4", .{ .matrix = .{ .width = 3, .height = 4 } } },
+        .{ "mat4x2", .{ .matrix = .{ .width = 4, .height = 2 } } },
+        .{ "mat4x3", .{ .matrix = .{ .width = 4, .height = 3 } } },
+        .{ "mat4x4", .{ .matrix = .{ .width = 4, .height = 4 } } },
+        .{ "ptr", .ptr },
+        .{ "texture_1d", .texture_1d },
+        .{ "texture_2d", .texture_2d },
+        .{ "texture_2d_array", .texture_2d_array },
+        .{ "texture_3d", .texture_3d },
+        .{ "texture_cube", .texture_cube },
+        .{ "texture_cube_array", .texture_cube_array },
+        .{ "texture_multisampled_2d", .texture_multisampled_2d },
+        .{ "texture_storage_1d", .texture_storage_1d },
+        .{ "texture_storage_2d", .texture_storage_2d },
+        .{ "texture_storage_2d_array", .texture_storage_2d_array },
+        .{ "texture_storage_3d", .texture_storage_3d },
+        .{ "vec2", .vec2 },
+        .{ "vec3", .vec3 },
+        .{ "vec4", .vec4 },
     });
 };
 
@@ -422,8 +551,7 @@ fn resolveType(self: *Self, env: *Env, typ: Node) !Type {
             }
 
             var ptr = try self.allocator.create(Struct);
-            ptr.name = self.readSpan(data.name);
-            ptr.members = members;
+            ptr.* = .{ .name = self.readSpan(data.name), .members = members };
 
             return Type{ .struct_decl = ptr };
         },
@@ -469,6 +597,46 @@ fn resolveType(self: *Self, env: *Env, typ: Node) !Type {
                     };
                     return Type{ .array = ptr };
                 },
+                .matrix => |mat| {
+                    if (data.args.len != 1) {
+                        self.reporter.add(Diagnostic{
+                            .span = data.name,
+                            .kind = .{ .expected_n_template_args = .{
+                                .expected = 1,
+                                .got = @truncate(data.args.len),
+                            } },
+                        });
+                    }
+
+                    var ptr = try self.allocator.create(Matrix);
+                    ptr.* = .{
+                        .item = try self.resolveType(env, data.args[0]),
+                        .width = mat.width,
+                        .height = mat.height,
+                    };
+                    return Type{ .matrix = ptr };
+                },
+                .ptr => {
+                    if (data.args.len != 1) {
+                        self.reporter.add(Diagnostic{
+                            .span = data.name,
+                            .kind = .{ .expected_n_template_args = .{
+                                .expected = 1,
+                                .got = @truncate(data.args.len),
+                            } },
+                        });
+                    }
+
+                    var ptr = try self.allocator.create(MemoryView);
+                    ptr.* = .{
+                        .addr_space = .function,
+                        .inner = try self.resolveType(env, data.args[0]),
+                        .access_mode = .read_write,
+                    };
+
+                    return Type{ .ptr = ptr };
+                },
+                else => std.debug.panic("{}", .{kind}),
             }
         },
         else => std.debug.panic("Unimplemented: {}", .{typ}),
@@ -511,13 +679,14 @@ pub fn loadTypes(self: *Self, env: *Env, scope: []const Node) !void {
     const DependencyContext = struct {
         pub fn hash(_: @This(), s: DependencyKey) u64 {
             var seed = std.hash.Wyhash.init(0);
-            seed.update(s.name);
             seed.update(&.{@intFromEnum(s.kind)});
+            seed.update(s.name);
             return seed.final();
         }
 
         pub fn eql(ctx: @This(), a: DependencyKey, b: DependencyKey) bool {
-            return ctx.hash(a) == ctx.hash(b);
+            _ = ctx;
+            return a.kind == b.kind and std.mem.eql(u8, a.name, b.name);
         }
     };
 
@@ -675,8 +844,6 @@ pub fn check(self: *Self, env: *Env, node: Node) !void {
             _ = try self.inferExpr(env, data.value);
         },
         .override_decl => |data| {
-            var name = self.readSpan(data.name);
-
             if (data.value) |value| {
                 var value_t = try self.inferExpr(env, value);
 
@@ -691,18 +858,16 @@ pub fn check(self: *Self, env: *Env, node: Node) !void {
                             } },
                         });
                     }
-                    _ = try self.putBinding(env, name, Binding{ .value = t, .flags = .{ .is_override = true } });
+                    try self.putBinding(env, data.name, Binding{ .value = t, .flags = .{ .is_override = true } });
                 } else {
-                    _ = try self.putBinding(env, name, Binding{ .value = value_t, .flags = .{ .is_override = true } });
+                    try self.putBinding(env, data.name, Binding{ .value = value_t, .flags = .{ .is_override = true } });
                 }
             } else if (data.typ) |typ| {
                 var t = try self.resolveType(env, typ);
-                _ = try self.putBinding(env, name, Binding{ .value = t, .flags = .{ .is_override = true } });
+                try self.putBinding(env, data.name, Binding{ .value = t, .flags = .{ .is_override = true } });
             }
         },
         .let_decl => |data| {
-            var name = self.readSpan(data.name);
-
             var value = data.value;
             var value_t = try self.inferExpr(env, value);
 
@@ -717,13 +882,12 @@ pub fn check(self: *Self, env: *Env, node: Node) !void {
                         } },
                     });
                 }
-                _ = try self.putBinding(env, name, Binding{ .value = t });
+                _ = try self.putBinding(env, data.name, Binding{ .value = t });
             } else {
-                _ = try self.putBinding(env, name, Binding{ .value = value_t.normalize() });
+                _ = try self.putBinding(env, data.name, Binding{ .value = value_t.normalize() });
             }
         },
         .var_decl => |data| {
-            var name = self.readSpan(data.name);
             var value_t = if (data.value) |expr|
                 try self.inferExpr(env, expr)
                 // TODO: verify constructible
@@ -736,24 +900,27 @@ pub fn check(self: *Self, env: *Env, node: Node) !void {
                 .access_mode = data.access_mode,
             };
 
-            _ = try self.putBinding(env, name, Binding{ .value = Type{ .ref = ptr } });
+            _ = try self.putBinding(env, data.name, Binding{ .value = Type{ .ref = ptr } });
         },
         .type_alias => {},
         .struct_decl => {},
         .fn_decl => |data| {
-            var scope = Env{
-                .parent = env,
-            };
+            var scope = Env{ .parent = env };
 
             try scope.bindings.ensureTotalCapacity(self.allocator, @truncate(data.params.len));
             for (data.params) |param| {
+                var p: *ast.LabeledType = if (param == .attributed)
+                    param.attributed.inner.labeled_type
+                else
+                    param.labeled_type;
+
                 scope.bindings.putAssumeCapacity(
-                    self.readSpan(param.labeled_type.name),
-                    .{ .value = try self.resolveType(env, param.labeled_type.typ) },
+                    self.readSpan(p.name),
+                    .{ .value = try self.resolveType(env, p.typ) },
                 );
             }
 
-            var ret_t = if (data.ret) |ret| try self.resolveType(env, ret) else null;
+            var ret_t = if (data.ret) |ret| try self.resolveType(env, if (ret == .attributed) ret.attributed.inner else ret) else null;
 
             for (data.scope) |n| {
                 switch (n) {
@@ -788,17 +955,66 @@ pub fn check(self: *Self, env: *Env, node: Node) !void {
         .call => {
             _ = try self.inferExpr(env, node);
         },
-        .if_stmt => |data| {
-            var condition = try self.inferExpr(env, data.expression);
+        .if_stmt => {
+            var next: ?Node = node;
+            while (next) |data| {
+                var sub_env = Env{ .parent = env };
+                switch (data) {
+                    .if_stmt => |d| {
+                        var condition = try self.inferExpr(env, d.expression);
 
-            if (condition != .bool and condition != .err) {
+                        if (condition != .bool and condition != .err) {
+                            self.reporter.add(Diagnostic{
+                                .span = d.expression.span(),
+                                .kind = .{ .not_assignable = .{
+                                    .expected = .bool,
+                                    .got = condition,
+                                } },
+                            });
+                        }
+
+                        for (d.scope) |n| {
+                            try self.check(&sub_env, n);
+                        }
+
+                        next = if (d.next) |n| n.* else null;
+                    },
+                    .else_stmt => |d| {
+                        for (d.scope) |n| {
+                            try self.check(&sub_env, n);
+                        }
+
+                        next = null;
+                    },
+                    else => unreachable,
+                }
+            }
+        },
+        .attributed => |data| {
+            try self.check(env, data.inner);
+        },
+        .while_stmt => |data| {
+            var expression = try self.inferExpr(env, data.expression);
+
+            if (!Type.isConversionPossible(expression, .bool)) {
                 self.reporter.add(Diagnostic{
                     .span = data.expression.span(),
                     .kind = .{ .not_assignable = .{
                         .expected = .bool,
-                        .got = condition,
+                        .got = expression,
                     } },
                 });
+            }
+
+            var sub_env = Env{ .parent = env };
+            for (data.scope) |n| {
+                try self.check(&sub_env, n);
+            }
+        },
+        .loop => |data| {
+            var sub_env = Env{ .parent = env };
+            for (data.scope) |n| {
+                try self.check(&sub_env, n);
             }
         },
         .assign => |data| {

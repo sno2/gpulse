@@ -693,10 +693,7 @@ pub const ScopeContext = struct {
 
 /// Parses a typed label which may have attributes.
 fn parseTypedLabel(p: *Parser) !Node {
-    var attributes = if (p.lex.token == .t_at) blk: {
-        p.lex.next();
-        break :blk try p.parseAttributeList();
-    } else null;
+    var attributes = try p.maybeParseAttributeList();
     var p_name = try p.eat(.t_ident);
     try p.expect(.t_colon);
     var p_type = try p.parseType();

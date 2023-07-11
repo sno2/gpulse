@@ -109,7 +109,7 @@ pub const Node = union(enum) {
             .number_literal => |x| x.span,
             .boolean_literal => |x| x.span,
             .template => |x| x.name,
-            .add, .sub, .mul, .div => |x| Span{
+            .add, .sub, .mul, .div, .mod, .cmp_and, .cmp_or => |x| Span{
                 .start = x.lhs.span().start,
                 .end = x.rhs.span().end,
             },

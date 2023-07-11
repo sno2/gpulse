@@ -49,6 +49,10 @@ pub const Diagnostic = struct {
             typ: Type,
             member: []const u8,
         },
+        already_declared: []const u8,
+        expected_arithmetic_lhs: struct {
+            got: Type,
+        },
     },
 
     pub fn format(diag: Diagnostic, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
@@ -90,6 +94,8 @@ pub const Diagnostic = struct {
             },
             .assignment_not_ref => |x| try writer.print("Expected a reference for left-hand assignment, got '{}'.", .{x}),
             .no_member => |x| try writer.print("'{}' does not have a member named '{s}'.", .{ x.typ, x.member }),
+            .already_declared => |x| try writer.print("'{s}' is already declared in this scope.", .{x}),
+            .expected_arithmetic_lhs => |x| try writer.print("Expected a 'vec<{{integer}}>' or '{{integer}}' for arithmetic, got '{}'.", .{x.got}),
         }
     }
 };

@@ -1,0 +1,2 @@
+ast.Node{ .const_decl = ast.ConstDecl{ .name = ast.Span{ .start = 6, .end = 7 }, .typ = null, .value = ast.Node{ .number_literal = ast.NumberLiteral{ .span = ast.Span{ .start = 10, .end = 13 }, .kind = ast.NumberLiteral.NumberKind.abstract_float } } } }
+ast.Node{ .const_decl = ast.ConstDecl{ .name = ast.Span{ .start = 53, .end = 54 }, .typ = null, .value = ast.Node{ .number_literal = ast.NumberLiteral{ .span = ast.Span{ .start = 57, .end = 60 }, .kind = ast.NumberLiteral.NumberKind.abstract_float } } } }

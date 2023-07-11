@@ -1,0 +1,2 @@
+ast.Node{ .const_decl = ast.ConstDecl{ .name = ast.Span{ .start = 6, .end = 15 }, .typ = null, .value = ast.Node{ .number_literal = ast.NumberLiteral{ .span = ast.Span{ .start = 18, .end = 20 }, .kind = ast.NumberLiteral.NumberKind.abstract_int } } } }
+ast.Node{ .const_decl = ast.ConstDecl{ .name = ast.Span{ .start = 115, .end = 124 }, .typ = null, .value = ast.Node{ .call = ast.Call{ .callee = ast.Node{ .identifier = ast.Span{ .start = 127, .end = 134 } }, .args = { ast.Node{ .identifier = ast.Span{ .start = 135, .end = 144 } } } } } } }
