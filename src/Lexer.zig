@@ -736,10 +736,12 @@ fn continueNumber(lex: *Lexer, newState: NumberState) void {
                 if (state.seen_exp) {
                     break;
                 }
+
                 lex.step();
                 state.seen_exp = true;
                 switch (lex.codepoint) {
                     '+', '-' => lex.step(),
+                    '0'...'9' => lex.step(),
                     else => break,
                 }
             },
