@@ -4,7 +4,10 @@
   "scopeName": "source.wgsl",
   "patterns": [
     {
-      "include": "#comments"
+      "include": "#line-comments"
+    },
+    {
+      "include": "#block-comments"
     },
     {
       "include": "#numbers"
@@ -29,15 +32,18 @@
     }
   ],
   "repository": {
-    "comments": {
+    "line-comments": {
+      "name": "comment.line.double-slash.wgsl",
+      "match": "//.*$"
+    },
+    "block-comments": {
       "patterns": [
-        {
-          "name": "comment.line.double-slash.wgsl",
-          "match": "//.*$"
-        },
         {
           "name": "comment.block.wgsl",
           "begin": "/\\*",
+          "patterns": [
+            { "include": "#block-comments" }
+          ],
           "end": "\\*/"
         }
       ]
