@@ -1,40 +1,6 @@
-error: Expected ';', found an identifier.
-
-const a = 0xa.fp+2;
-               ~
-error: Cannot use expression as a statement. Consider using '_ = '.
-
-const a = 0xa.fp+2;
-               ~~~
-error: Expected ';', found an identifier.
-
-const b = 0x1P+4f;
-             ~
-error: Cannot use expression as a statement. Consider using '_ = '.
-
-const b = 0x1P+4f;
-             ~~~~
-error: Expected ';', found an identifier.
-
-const d = 0x3p+2h;
-             ~
-error: Cannot use expression as a statement. Consider using '_ = '.
-
-const d = 0x3p+2h;
-             ~~~~
-error: Expected ';', found an identifier.
-
-const e = 0X1.fp-4;
-               ~
-error: Cannot use expression as a statement. Consider using '_ = '.
-
-const e = 0X1.fp-4;
-               ~~~
-error: Expected ';', found an identifier.
-
-const f = 0x3.2p+2h;
-               ~
-error: Cannot use expression as a statement. Consider using '_ = '.
-
-const f = 0x3.2p+2h;
-               ~~~~
+ast.Node{ .const_decl = ast.ConstDecl{ .name = ast.Span{ .start = 6, .end = 7 }, .typ = null, .value = ast.Node{ .number_literal = ast.NumberLiteral{ .span = ast.Span{ .start = 10, .end = 18 }, .kind = ast.NumberLiteral.NumberKind.abstract_float } } } }
+ast.Node{ .const_decl = ast.ConstDecl{ .name = ast.Span{ .start = 26, .end = 27 }, .typ = null, .value = ast.Node{ .number_literal = ast.NumberLiteral{ .span = ast.Span{ .start = 30, .end = 37 }, .kind = ast.NumberLiteral.NumberKind.f32 } } } }
+ast.Node{ .const_decl = ast.ConstDecl{ .name = ast.Span{ .start = 45, .end = 46 }, .typ = null, .value = ast.Node{ .number_literal = ast.NumberLiteral{ .span = ast.Span{ .start = 49, .end = 53 }, .kind = ast.NumberLiteral.NumberKind.abstract_float } } } }
+ast.Node{ .const_decl = ast.ConstDecl{ .name = ast.Span{ .start = 61, .end = 62 }, .typ = null, .value = ast.Node{ .number_literal = ast.NumberLiteral{ .span = ast.Span{ .start = 65, .end = 72 }, .kind = ast.NumberLiteral.NumberKind.f16 } } } }
+ast.Node{ .const_decl = ast.ConstDecl{ .name = ast.Span{ .start = 80, .end = 81 }, .typ = null, .value = ast.Node{ .number_literal = ast.NumberLiteral{ .span = ast.Span{ .start = 84, .end = 92 }, .kind = ast.NumberLiteral.NumberKind.abstract_float } } } }
+ast.Node{ .const_decl = ast.ConstDecl{ .name = ast.Span{ .start = 100, .end = 101 }, .typ = null, .value = ast.Node{ .number_literal = ast.NumberLiteral{ .span = ast.Span{ .start = 104, .end = 113 }, .kind = ast.NumberLiteral.NumberKind.f16 } } } }

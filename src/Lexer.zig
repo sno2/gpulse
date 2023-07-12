@@ -745,6 +745,19 @@ fn continueNumber(lex: *Lexer, newState: NumberState) void {
                     else => break,
                 }
             },
+            'p', 'P' => {
+                if (!state.seen_hex or state.seen_exp) {
+                    break;
+                }
+
+                lex.step();
+                state.seen_exp = true;
+                switch (lex.codepoint) {
+                    '+', '-' => lex.step(),
+                    '0'...'9' => lex.step(),
+                    else => break,
+                }
+            },
             'i', 'u', 'f', 'h' => {
                 lex.step();
                 if (!state.seen_hex) break;

@@ -89,6 +89,7 @@ pub const Node = union(enum) {
 
     // Control flow
     loop: *Loop,
+    for_stmt: *For,
     switch_stmt: *Switch,
     default_selector: Span,
     if_stmt: *If,
@@ -339,6 +340,14 @@ pub const Scope = struct {
 };
 
 pub const Loop = struct {
+    attributes: ?[]Attribute,
+    scope: []Node,
+};
+
+pub const For = struct {
+    init: ?Node,
+    condition: ?Node,
+    update: ?Node,
     attributes: ?[]Attribute,
     scope: []Node,
 };

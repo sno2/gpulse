@@ -114,7 +114,7 @@
             },
             { "include": "#identifiers" }
           ],
-          "end": ">"
+          "end": ">|;|}|{|:"
         },
         {
           "name": "keyword.declaration.wgsl",
