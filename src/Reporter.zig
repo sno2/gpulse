@@ -152,7 +152,20 @@ pub fn dump(reporter: *Reporter, writer: anytype) !void {
             try writer.print("error: {}\n\n", .{diag});
             var line = findLine(reporter.sources.items[diag.source_id.?], diag.span);
             try writer.print("{s}\n", .{line.@"0"});
-            try writer.print("{s}{s}\n", .{ spaces[0..line.@"1"], tildes[0 .. diag.span.end - diag.span.start] });
+
+            var left = line.@"1";
+            while (left > 0) {
+                var len = @min(128, left);
+                try writer.writeAll(spaces[0..len]);
+                left -= len;
+            }
+
+            left = diag.span.end - diag.span.start;
+            while (left > 0) {
+                var len = @min(128, left);
+                try writer.writeAll(tildes[0..len]);
+                left -= len;
+            }
         }
         reporter.diagnostics.items.len = 0;
     }

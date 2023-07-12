@@ -2,6 +2,7 @@ const std = @import("std");
 const Lexer = @This();
 const Span = @import("ast.zig").Span;
 const discovery = @import("discovery.zig");
+const identifiers = @import("identifiers.zig");
 
 pub const Token = enum {
     // End of file
@@ -408,6 +409,7 @@ fn step(lex: *Lexer) void {
         return;
     }
 
+    // Compiler size hint
     std.debug.assert(lex.codepoint >= 0);
 
     lex.index += std.unicode.utf8CodepointSequenceLength(@as(u21, @intCast(lex.codepoint))) catch unreachable;
@@ -699,7 +701,14 @@ pub fn next(lex: *Lexer) void {
                 } else .t_bit_xor;
             },
             -1 => lex.token = .t_eof,
-            else => {
+            else => blk: {
+                if (identifiers.isXidStart(@intCast(lex.codepoint))) {
+                    lex.step();
+                    lex.token = .t_ident;
+                    lex.continueIdentSlow();
+                    break :blk;
+                }
+
                 lex.step();
                 lex.token = .t_unknown;
             },
@@ -791,10 +800,12 @@ fn continueIdentFast(lex: *Lexer) void {
 }
 
 fn continueIdentSlow(lex: *Lexer) void {
-    _ = lex;
-    // while (true) {
-    // if let c) = lex.codepoint && c.is
-    // }
+    while (lex.codepoint != -1) {
+        if (!identifiers.isXidContinue(@intCast(lex.codepoint))) {
+            break;
+        }
+        lex.step();
+    }
 }
 
 // https://www.w3.org/TR/WGSL/#line-ending-comment

@@ -84,4 +84,22 @@ pub fn build(b: *std.Build) void {
     }
     const coverage_step = b.step("coverage", "Run parser/analyzer coverage suite.");
     coverage_step.dependOn(&coverage_cmd.step);
+
+    // Fuzzing
+    const fuzz_exe = b.addExecutable(.{
+        .name = "gpulse_fuzz",
+        // In this case the main source file is merely a path, however, in more
+        // complicated build scripts, this could be a generated file.
+        .root_source_file = .{ .path = "src/fuzz.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    b.installArtifact(fuzz_exe);
+    const fuzz_cmd = b.addRunArtifact(fuzz_exe);
+    fuzz_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        fuzz_cmd.addArgs(args);
+    }
+    const fuzz_step = b.step("fuzz", "Fuzz parser.");
+    fuzz_step.dependOn(&fuzz_cmd.step);
 }

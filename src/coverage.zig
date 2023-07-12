@@ -26,7 +26,7 @@ fn testSuite(arena: *std.heap.ArenaAllocator, testsFolder: std.fs.Dir, name: []c
 
         defer _ = arena.reset(.retain_capacity);
 
-        var file = try iter.dir.readFileAlloc(arena.allocator(), entry.basename, 4096 * 4);
+        var file = try iter.dir.readFileAlloc(arena.allocator(), entry.basename, 262144);
 
         var reporter = Reporter.init(arena.allocator());
         _ = reporter.pushSource(file);
@@ -59,8 +59,13 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
+    // Load arena with the maximum memory required.
+    _ = try arena.allocator().alloc(u8, 607337);
+    _ = arena.reset(.retain_capacity);
+
     var specExamples = try testSuite(&arena, testsFolder, "spec-examples");
     var tourExamples = try testSuite(&arena, testsFolder, "tour-of-wgsl");
+    var custom = try testSuite(&arena, testsFolder, "custom");
 
     var stat_message = try std.fmt.allocPrint(arena.allocator(),
         \\WGSL Specification Examples ({})
@@ -70,6 +75,10 @@ pub fn main() !void {
         \\Tour of WGSL Examples ({})
         \\✅ {} passed
         \\❌ {} failed
+        \\
+        \\Custom ({})
+        \\✅ {} passed
+        \\❌ {} failed
     ++ "\n", .{
         specExamples.total,
         specExamples.passed(),
@@ -77,6 +86,9 @@ pub fn main() !void {
         tourExamples.total,
         tourExamples.passed(),
         tourExamples.failed,
+        custom.total,
+        custom.passed(),
+        custom.failed,
     });
     try testsFolder.writeFile("_manifest.stat", stat_message);
     var stdout = std.io.getStdOut();

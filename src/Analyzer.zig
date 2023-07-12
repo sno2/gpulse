@@ -696,42 +696,69 @@ pub fn loadTypes(self: *Self, env: *Env, scope: []const Node) !void {
     for (scope) |node| {
         switch (node) {
             .struct_decl => |data| {
-                try graph.put(.{
+                var stat = try graph.getOrPut(.{
                     .name = self.readSpan(data.name),
                     .kind = .alias,
-                }, DependencyNode{
-                    .name = data.name,
-                    .value = node,
-                    .children = .{ .refs = try self.getDependencies(node) },
                 });
+
+                if (stat.found_existing) {
+                    self.reporter.add(Diagnostic{
+                        .span = data.name,
+                        .kind = .{ .already_declared = self.readSpan(data.name) },
+                    });
+                } else {
+                    stat.value_ptr.* = DependencyNode{
+                        .name = data.name,
+                        .value = node,
+                        .children = .{ .refs = try self.getDependencies(node) },
+                    };
+                }
             },
             .type_alias => |data| {
-                try graph.put(.{
+                var stat = try graph.getOrPut(.{
                     .name = self.readSpan(data.name),
                     .kind = .alias,
-                }, DependencyNode{
-                    .name = data.name,
-                    .value = data.value,
-                    .children = .{ .refs = try self.getDependencies(data.value) },
                 });
+
+                if (stat.found_existing) {
+                    self.reporter.add(Diagnostic{
+                        .span = data.name,
+                        .kind = .{ .already_declared = self.readSpan(data.name) },
+                    });
+                } else {
+                    stat.value_ptr.* = DependencyNode{
+                        .name = data.name,
+                        .value = data.value,
+                        .children = .{ .refs = try self.getDependencies(data.value) },
+                    };
+                }
             },
             .fn_decl => |data| {
-                var children = std.ArrayList(DependencyNode.Ref).init(allocator);
-                for (data.params) |param_t| {
-                    try children.appendSlice(try self.getDependencies(param_t));
-                }
-                if (data.ret) |ret_t| {
-                    try children.appendSlice(try self.getDependencies(ret_t));
-                }
-
-                try graph.put(.{
+                var stat = try graph.getOrPut(.{
                     .name = self.readSpan(data.name),
-                    .kind = .alias,
-                }, DependencyNode{
-                    .name = data.name,
-                    .value = node,
-                    .children = .{ .refs = try children.toOwnedSlice() },
+                    .kind = .function,
                 });
+
+                if (stat.found_existing) {
+                    self.reporter.add(Diagnostic{
+                        .span = data.name,
+                        .kind = .{ .already_declared = self.readSpan(data.name) },
+                    });
+                } else {
+                    var children = std.ArrayList(DependencyNode.Ref).init(allocator);
+                    for (data.params) |param_t| {
+                        try children.appendSlice(try self.getDependencies(param_t));
+                    }
+                    if (data.ret) |ret_t| {
+                        try children.appendSlice(try self.getDependencies(ret_t));
+                    }
+
+                    stat.value_ptr.* = DependencyNode{
+                        .name = data.name,
+                        .value = node,
+                        .children = .{ .refs = try children.toOwnedSlice() },
+                    };
+                }
             },
             else => {},
         }
