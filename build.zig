@@ -102,4 +102,40 @@ pub fn build(b: *std.Build) void {
     }
     const fuzz_step = b.step("fuzz", "Fuzz parser.");
     fuzz_step.dependOn(&fuzz_cmd.step);
+
+    // Formatting
+    const fmt_exe = b.addExecutable(.{
+        .name = "gpulse_fmt",
+        // In this case the main source file is merely a path, however, in more
+        // complicated build scripts, this could be a generated file.
+        .root_source_file = .{ .path = "src/fmt.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    b.installArtifact(fmt_exe);
+    const fmt_cmd = b.addRunArtifact(fmt_exe);
+    fmt_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        fmt_cmd.addArgs(args);
+    }
+    const fmt_step = b.step("fmt", "Format source.wgsl.");
+    fmt_step.dependOn(&fmt_cmd.step);
+
+    // Formatting
+    const lsp_exe = b.addExecutable(.{
+        .name = "gpulse_lsp",
+        // In this case the main source file is merely a path, however, in more
+        // complicated build scripts, this could be a generated file.
+        .root_source_file = .{ .path = "src/lsp/Server.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    b.installArtifact(lsp_exe);
+    const lsp_cmd = b.addRunArtifact(lsp_exe);
+    lsp_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        lsp_cmd.addArgs(args);
+    }
+    const lsp_step = b.step("lsp", "Language server.");
+    lsp_step.dependOn(&lsp_cmd.step);
 }

@@ -11,6 +11,8 @@ pub const Span = struct {
     }
 };
 
+pub const NodeTag = std.meta.Tag(Node);
+
 pub const Node = union(enum) {
     /// An error node.
     err: Span,
@@ -24,6 +26,7 @@ pub const Node = union(enum) {
     boolean_literal: *BooleanLiteral,
     template: *Template,
     call: *Call,
+    paren: *Node,
 
     // Unary Operations
     negate: *UnaryOp,
@@ -48,7 +51,7 @@ pub const Node = union(enum) {
     cmp_and: *BinaryOp,
     cmp_or: *BinaryOp,
     member: *BinaryOp,
-    index: *BinaryOp,
+    index: *Index,
     less_than: *BinaryOp,
     less_than_equal: *BinaryOp,
     greater_than: *BinaryOp,
@@ -110,10 +113,12 @@ pub const Node = union(enum) {
             .number_literal => |x| x.span,
             .boolean_literal => |x| x.span,
             .template => |x| x.name,
-            .add, .sub, .mul, .div, .mod, .cmp_and, .cmp_or => |x| Span{
+            .add, .sub, .mul, .div, .mod, .cmp_and, .cmp_or, .bit_and, .bit_or, .bit_xor => |x| Span{
                 .start = x.lhs.span().start,
                 .end = x.rhs.span().end,
             },
+            .negate, .not, .bit_not, .deref, .ref => |x| Span.init(x.op_idx, x.value.span().end),
+            .inc, .dec => |x| Span.init(x.value.span().start, x.op_idx + 2),
             .discard => |x| x,
             .const_assert => |x| x.value.span(),
             .fn_decl => |x| x.name,
@@ -123,6 +128,11 @@ pub const Node = union(enum) {
             else => std.debug.panic("Unsupported: {}", .{node}),
         };
     }
+};
+
+pub const Index = struct {
+    root: Node,
+    index: Node,
 };
 
 pub const Attributed = struct {
@@ -203,7 +213,10 @@ pub const NumberLiteral = struct {
 
 pub const BooleanLiteral = struct {
     span: Span,
-    value: bool,
+
+    pub fn value(self: BooleanLiteral) bool {
+        return self.span.end - self.span.start == 4;
+    }
 };
 
 pub const Template = struct {
@@ -230,11 +243,13 @@ pub const Call = struct {
 // };
 
 pub const UnaryOp = struct {
+    op_idx: u32,
     value: Node,
 };
 
 pub const BinaryOp = struct {
     lhs: Node,
+    op_idx: u32,
     rhs: Node,
 };
 
@@ -260,7 +275,7 @@ pub const OverrideDecl = struct {
 
 pub const VarDecl = struct {
     name: Span,
-    access_mode: AccessMode,
+    access_mode: ?AccessMode,
     addr_space: ?AddrSpace,
     typ: ?Node,
     value: ?Node,

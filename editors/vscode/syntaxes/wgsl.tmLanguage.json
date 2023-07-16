@@ -111,8 +111,7 @@
             {
               "name": "constant.other.wgsl",
               "match": "\\b(private|storage|workgroup|uniform|read|write|read_write)\\b"
-            },
-            { "include": "#identifiers" }
+            }
           ],
           "end": ">|;|}|{|:"
         },

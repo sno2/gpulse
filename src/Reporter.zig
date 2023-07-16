@@ -95,7 +95,7 @@ pub const Diagnostic = struct {
             .assignment_not_ref => |x| try writer.print("Expected a reference for left-hand assignment, got '{}'.", .{x}),
             .no_member => |x| try writer.print("'{}' does not have a member named '{s}'.", .{ x.typ, x.member }),
             .already_declared => |x| try writer.print("'{s}' is already declared in this scope.", .{x}),
-            .expected_arithmetic_lhs => |x| try writer.print("Expected a 'vec<{{integer}}>' or '{{integer}}' for arithmetic, got '{}'.", .{x.got}),
+            .expected_arithmetic_lhs => |x| try writer.print("Expected a '{{integer}}' or 'vec<{{integer}}>' for arithmetic, got '{}'.", .{x.got}),
         }
     }
 };
@@ -143,8 +143,8 @@ fn findLine(source: []const u8, span: ast.Span) struct { []const u8, usize } {
     return .{ source[start..end], span.start - start };
 }
 
-const spaces: [128]u8 = .{' '} ** 128;
-const tildes: [128]u8 = .{'~'} ** 128;
+const spaces: [64]u8 = .{' '} ** 64;
+const tildes: [64]u8 = .{'~'} ** 64;
 
 pub fn dump(reporter: *Reporter, writer: anytype) !void {
     if (reporter.diagnostics.items.len != 0) {
@@ -155,17 +155,18 @@ pub fn dump(reporter: *Reporter, writer: anytype) !void {
 
             var left = line.@"1";
             while (left > 0) {
-                var len = @min(128, left);
+                var len = @min(64, left);
                 try writer.writeAll(spaces[0..len]);
                 left -= len;
             }
 
             left = diag.span.end - diag.span.start;
             while (left > 0) {
-                var len = @min(128, left);
+                var len = @min(64, left);
                 try writer.writeAll(tildes[0..len]);
                 left -= len;
             }
+            try writer.writeAll("\n");
         }
         reporter.diagnostics.items.len = 0;
     }

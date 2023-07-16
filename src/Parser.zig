@@ -158,12 +158,12 @@ inline fn parseSimpleExpr(p: *Parser) Error!Node {
         .tk_true => {
             var span = p.lex.span();
             p.lex.next();
-            return p.create(.boolean_literal, .{ .span = span, .value = true });
+            return p.create(.boolean_literal, .{ .span = span });
         },
         .tk_false => {
             var span = p.lex.span();
             p.lex.next();
-            return p.create(.boolean_literal, .{ .span = span, .value = false });
+            return p.create(.boolean_literal, .{ .span = span });
         },
         .t_ident => {
             var span = p.lex.span();
@@ -189,37 +189,32 @@ inline fn parseSimpleExpr(p: *Parser) Error!Node {
             p.lex.next();
             var expr = try p.parseExpr();
             try p.expect(.t_rparen);
-            return expr;
+            return p.create(.paren, expr);
         },
         .t_sub => {
+            const op_idx: u32 = @truncate(p.lex.start);
             p.lex.next();
-            return p.create(.negate, .{
-                .value = try p.parseExprRec(5),
-            });
+            return p.create(.negate, .{ .op_idx = op_idx, .value = try p.parseExprRec(5) });
         },
         .t_not => {
+            const op_idx: u32 = @truncate(p.lex.start);
             p.lex.next();
-            return p.create(.not, .{
-                .value = try p.parseExprRec(5),
-            });
+            return p.create(.not, .{ .op_idx = op_idx, .value = try p.parseExprRec(5) });
         },
         .t_bit_not => {
+            const op_idx: u32 = @truncate(p.lex.start);
             p.lex.next();
-            return p.create(.bit_not, .{
-                .value = try p.parseExprRec(5),
-            });
+            return p.create(.bit_not, .{ .op_idx = op_idx, .value = try p.parseExprRec(5) });
         },
         .t_mul => {
+            const op_idx: u32 = @truncate(p.lex.start);
             p.lex.next();
-            return p.create(.deref, .{
-                .value = try p.parseExprRec(5),
-            });
+            return p.create(.deref, .{ .op_idx = op_idx, .value = try p.parseExprRec(5) });
         },
         .t_bit_and => {
+            const op_idx: u32 = @truncate(p.lex.start);
             p.lex.next();
-            return p.create(.ref, .{
-                .value = try p.parseExprRec(5),
-            });
+            return p.create(.ref, .{ .op_idx = op_idx, .value = try p.parseExprRec(5) });
         },
         else => {
             var start = p.lex.start;
@@ -293,103 +288,71 @@ fn parseExprRec(p: *Parser, hp: u8) Error!Node {
         }
 
         switch (p.lex.token) {
-            .t_add => {
+            inline .t_add,
+            .t_sub,
+            .t_mul,
+            .t_div,
+            .t_mod,
+            .t_bit_left,
+            .t_bit_right,
+            .t_bit_and,
+            .t_bit_or,
+            .t_bit_xor,
+            .t_less_than,
+            .t_less_than_equal,
+            .t_greater_than,
+            .t_greater_than_equal,
+            .t_not_equal,
+            => |tag| {
+                const op_idx: u32 = @truncate(p.lex.start);
                 p.lex.next();
-                lhs = p.create(.add, .{
+                lhs = p.create(@field(ast.NodeTag, @tagName(tag)[2..]), .{
                     .lhs = lhs,
-                    .rhs = try p.parseExprRec(power),
-                });
-            },
-            .t_sub => {
-                p.lex.next();
-                lhs = p.create(.sub, .{
-                    .lhs = lhs,
-                    .rhs = try p.parseExprRec(power),
-                });
-            },
-            .t_mul => {
-                p.lex.next();
-                lhs = p.create(.mul, .{
-                    .lhs = lhs,
-                    .rhs = try p.parseExprRec(power),
-                });
-            },
-            .t_div => {
-                p.lex.next();
-                lhs = p.create(.div, .{
-                    .lhs = lhs,
-                    .rhs = try p.parseExprRec(power),
-                });
-            },
-            .t_mod => {
-                p.lex.next();
-                lhs = p.create(.mod, .{
-                    .lhs = lhs,
-                    .rhs = try p.parseExprRec(power),
-                });
-            },
-            .t_bit_left => {
-                p.lex.next();
-                lhs = p.create(.bit_left, .{
-                    .lhs = lhs,
-                    .rhs = try p.parseExprRec(power),
-                });
-            },
-            .t_bit_right => {
-                p.lex.next();
-                lhs = p.create(.bit_right, .{
-                    .lhs = lhs,
-                    .rhs = try p.parseExprRec(power),
-                });
-            },
-            .t_bit_and => {
-                p.lex.next();
-                lhs = p.create(.bit_and, .{
-                    .lhs = lhs,
-                    .rhs = try p.parseExprRec(power),
-                });
-            },
-            .t_bit_or => {
-                p.lex.next();
-                lhs = p.create(.bit_or, .{
-                    .lhs = lhs,
-                    .rhs = try p.parseExprRec(power),
-                });
-            },
-            .t_bit_xor => {
-                p.lex.next();
-                lhs = p.create(.bit_xor, .{
-                    .lhs = lhs,
-                    .rhs = try p.parseExprRec(power),
-                });
-            },
-            .t_and => {
-                p.lex.next();
-                lhs = p.create(.cmp_and, .{
-                    .lhs = lhs,
-                    .rhs = try p.parseExprRec(power),
-                });
-            },
-            .t_or => {
-                p.lex.next();
-                lhs = p.create(.cmp_or, .{
-                    .lhs = lhs,
+                    .op_idx = op_idx,
                     .rhs = try p.parseExprRec(power),
                 });
             },
             .t_dot => {
+                const op_idx: u32 = @truncate(p.lex.start);
                 p.lex.next();
-                var name = try p.eat(.t_ident);
                 lhs = p.create(.member, .{
                     .lhs = lhs,
-                    .rhs = .{ .identifier = name },
+                    .op_idx = op_idx,
+                    .rhs = try p.parseExprRec(power),
+                });
+            },
+            .t_or => {
+                const op_idx: u32 = @truncate(p.lex.start);
+                p.lex.next();
+                lhs = p.create(.cmp_or, .{
+                    .lhs = lhs,
+                    .op_idx = op_idx,
+                    .rhs = try p.parseExprRec(power),
+                });
+            },
+            .t_and => {
+                const op_idx: u32 = @truncate(p.lex.start);
+                p.lex.next();
+                lhs = p.create(.cmp_and, .{
+                    .lhs = lhs,
+                    .op_idx = op_idx,
+                    .rhs = try p.parseExprRec(power),
+                });
+            },
+            .t_equality => {
+                const op_idx: u32 = @truncate(p.lex.start);
+                p.lex.next();
+                lhs = p.create(.equal, .{
+                    .lhs = lhs,
+                    .op_idx = op_idx,
+                    .rhs = try p.parseExprRec(power),
                 });
             },
             .t_lbrack => {
                 p.lex.next();
                 lhs = p.create(.index, .{
-                    .lhs = lhs,
-                    .rhs = try p.parseExpr(),
+                    .root = lhs,
+                    .index = try p.parseExpr(),
                 });
                 try p.expect(.t_rbrack);
             },
@@ -411,30 +374,6 @@ fn parseExprRec(p: *Parser, hp: u8) Error!Node {
                     .callee = lhs,
                     .args = args.toOwnedSlice() catch unreachable,
                 });
-            },
-            .t_less_than => {
-                p.lex.next();
-                lhs = p.create(.less_than, .{ .lhs = lhs, .rhs = try p.parseExprRec(power) });
-            },
-            .t_less_than_equal => {
-                p.lex.next();
-                lhs = p.create(.less_than_equal, .{ .lhs = lhs, .rhs = try p.parseExprRec(power) });
-            },
-            .t_greater_than => {
-                p.lex.next();
-                lhs = p.create(.greater_than, .{ .lhs = lhs, .rhs = try p.parseExprRec(power) });
-            },
-            .t_greater_than_equal => {
-                p.lex.next();
-                lhs = p.create(.greater_than_equal, .{ .lhs = lhs, .rhs = try p.parseExprRec(power) });
-            },
-            .t_equality => {
-                p.lex.next();
-                lhs = p.create(.equal, .{ .lhs = lhs, .rhs = try p.parseExprRec(power) });
-            },
-            .t_not_equal => {
-                p.lex.next();
-                lhs = p.create(.not_equal, .{ .lhs = lhs, .rhs = try p.parseExprRec(power) });
             },
             .t_template_start => {
                 p.lex.next();
@@ -736,68 +675,25 @@ inline fn parseVariableUpdating(p: *Parser) !Node {
     var binding = try p.parseExpr();
 
     switch (p.lex.token) {
-        .t_assign => {
+        inline .t_assign, .t_add_assign, .t_sub_assign, .t_mul_assign, .t_div_assign, .t_mod_assign, .t_bit_left_assign, .t_bit_right_assign, .t_bit_and_assign, .t_bit_or_assign, .t_bit_xor_assign => |tag| {
+            const op_idx: u32 = @truncate(p.lex.start);
             p.lex.next();
             var value = try p.parseExpr();
-            return p.create(.assign, .{ .lhs = binding, .rhs = value });
-        },
-        .t_add_assign => {
-            p.lex.next();
-            var value = try p.parseExpr();
-            return p.create(.add_assign, .{ .lhs = binding, .rhs = value });
-        },
-        .t_sub_assign => {
-            p.lex.next();
-            var value = try p.parseExpr();
-            return p.create(.sub_assign, .{ .lhs = binding, .rhs = value });
-        },
-        .t_mul_assign => {
-            p.lex.next();
-            var value = try p.parseExpr();
-            return p.create(.mul_assign, .{ .lhs = binding, .rhs = value });
-        },
-        .t_div_assign => {
-            p.lex.next();
-            var value = try p.parseExpr();
-            return p.create(.div_assign, .{ .lhs = binding, .rhs = value });
-        },
-        .t_mod_assign => {
-            p.lex.next();
-            var value = try p.parseExpr();
-            return p.create(.mod_assign, .{ .lhs = binding, .rhs = value });
-        },
-        .t_bit_left_assign => {
-            p.lex.next();
-            var value = try p.parseExpr();
-            return p.create(.bit_left_assign, .{ .lhs = binding, .rhs = value });
-        },
-        .t_bit_right_assign => {
-            p.lex.next();
-            var value = try p.parseExpr();
-            return p.create(.bit_right_assign, .{ .lhs = binding, .rhs = value });
-        },
-        .t_bit_and_assign => {
-            p.lex.next();
-            var value = try p.parseExpr();
-            return p.create(.bit_and_assign, .{ .lhs = binding, .rhs = value });
-        },
-        .t_bit_or_assign => {
-            p.lex.next();
-            var value = try p.parseExpr();
-            return p.create(.bit_or_assign, .{ .lhs = binding, .rhs = value });
-        },
-        .t_bit_xor_assign => {
-            p.lex.next();
-            var value = try p.parseExpr();
-            return p.create(.bit_xor_assign, .{ .lhs = binding, .rhs = value });
+            return p.create(@field(ast.NodeTag, @tagName(tag)[2..]), .{
+                .lhs = binding,
+                .op_idx = op_idx,
+                .rhs = value,
+            });
         },
         .t_inc => {
+            const op_idx: u32 = @truncate(p.lex.start);
             p.lex.next();
-            return p.create(.inc, .{ .value = binding });
+            return p.create(.inc, .{ .op_idx = op_idx, .value = binding });
         },
         .t_dec => {
+            const op_idx: u32 = @truncate(p.lex.start);
             p.lex.next();
-            return p.create(.dec, .{ .value = binding });
+            return p.create(.dec, .{ .op_idx = op_idx, .value = binding });
         },
         else => {
             // Technically we aren't supposed to parse this here...but it's
@@ -821,7 +717,7 @@ inline fn parseVariableDecl(p: *Parser, ctx: ScopeContext) !Node {
         .tk_var => {
             p.lex.next();
 
-            var access_mode: ast.AccessMode = .read_write;
+            var access_mode: ?ast.AccessMode = null;
             var addr_space: ?ast.AddrSpace = null;
 
             if (p.lex.token == .t_template_start) {
@@ -876,7 +772,6 @@ inline fn parseVariableDecl(p: *Parser, ctx: ScopeContext) !Node {
                     .span = Span.init(@truncate(start), end),
                     .kind = .invalid_let_statement,
                 });
-                p.expectSemi();
                 return .{ .err = Span.init(@truncate(start), end) };
             }
 
@@ -1148,12 +1043,12 @@ pub fn parseStmt(p: *Parser, ctx: ScopeContext) Error!Node {
         },
         .tk_if => {
             var head: Node = undefined;
-            var cur: *Node = &head;
+            var cur: ?*Node = &head;
 
             while (true) {
                 if (p.lex.token == .t_lbrace) {
                     var data = try p.parseCompoundStmt(ctx);
-                    cur.* = p.create(.else_stmt, .{
+                    cur.?.* = p.create(.else_stmt, .{
                         .attributes = data.attributes,
                         .scope = data.scope,
                     });
@@ -1165,18 +1060,19 @@ pub fn parseStmt(p: *Parser, ctx: ScopeContext) Error!Node {
                 var expr = try p.parseExpr();
                 var data = try p.parseCompoundStmt(ctx);
 
-                var next = p.arena.create(Node) catch unreachable;
-                cur.* = p.create(.if_stmt, .{
+                var next: ?*Node = if (p.lex.token != .tk_else) null else p.arena.create(Node) catch unreachable;
+                cur.?.* = p.create(.if_stmt, .{
                     .expression = expr,
                     .attributes = data.attributes,
                     .scope = data.scope,
                     .next = next,
                 });
+                cur = next;
 
                 if (p.lex.token != .tk_else) {
-                    cur.if_stmt.next = null;
                     break;
                 }
+
                 p.lex.next();
             }
 

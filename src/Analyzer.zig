@@ -259,7 +259,7 @@ pub fn inferExpr(self: *Self, env: *Env, expr: Node) !Type {
             .abstract_float => .abstract_float,
         },
         .boolean_literal => |_| .bool,
-        .add, .sub, .mul, .div, .mod => |data| {
+        .add, .sub, .mul, .div, .mod, .bit_and, .bit_or, .bit_xor, .bit_left, .bit_right => |data| {
             var lhs = try self.inferExpr(env, data.lhs);
             var rhs = try self.inferExpr(env, data.rhs);
 
@@ -870,6 +870,25 @@ pub fn check(self: *Self, env: *Env, node: Node) !void {
         .const_assert => |data| {
             _ = try self.inferExpr(env, data.value);
         },
+        .const_decl => |data| {
+            var value_t = try self.inferExpr(env, data.value);
+
+            if (data.typ) |typ| {
+                var t = try self.resolveType(env, typ);
+                if (!Type.isConversionPossible(value_t, t)) {
+                    self.reporter.add(Diagnostic{
+                        .span = data.value.span(),
+                        .kind = .{ .not_assignable = .{
+                            .expected = t,
+                            .got = value_t,
+                        } },
+                    });
+                }
+                try self.putBinding(env, data.name, Binding{ .value = t, .flags = .{ .is_override = true } });
+            } else {
+                try self.putBinding(env, data.name, Binding{ .value = value_t, .flags = .{ .is_override = true } });
+            }
+        },
         .override_decl => |data| {
             if (data.value) |value| {
                 var value_t = try self.inferExpr(env, value);
@@ -924,7 +943,7 @@ pub fn check(self: *Self, env: *Env, node: Node) !void {
             ptr.* = MemoryView{
                 .addr_space = data.addr_space orelse .function,
                 .inner = value_t.normalize(),
-                .access_mode = data.access_mode,
+                .access_mode = data.access_mode orelse .read_write,
             };
 
             _ = try self.putBinding(env, data.name, Binding{ .value = Type{ .ref = ptr } });

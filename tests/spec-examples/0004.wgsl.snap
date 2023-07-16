@@ -1,2 +1,2 @@
-ast.Node{ .const_decl = ast.ConstDecl{ .name = ast.Span{ .start = 6, .end = 7 }, .typ = null, .value = ast.Node{ .boolean_literal = ast.BooleanLiteral{ .span = ast.Span{ .start = 10, .end = 14 }, .value = true } } } }
-ast.Node{ .const_decl = ast.ConstDecl{ .name = ast.Span{ .start = 22, .end = 23 }, .typ = null, .value = ast.Node{ .boolean_literal = ast.BooleanLiteral{ .span = ast.Span{ .start = 26, .end = 31 }, .value = false } } } }
+ast.Node{ .const_decl = ast.ConstDecl{ .name = ast.Span{ .start = 6, .end = 7 }, .typ = null, .value = ast.Node{ .boolean_literal = ast.BooleanLiteral{ .span = ast.Span{ .start = 10, .end = 14 } } } } }
+ast.Node{ .const_decl = ast.ConstDecl{ .name = ast.Span{ .start = 22, .end = 23 }, .typ = null, .value = ast.Node{ .boolean_literal = ast.BooleanLiteral{ .span = ast.Span{ .start = 26, .end = 31 } } } } }

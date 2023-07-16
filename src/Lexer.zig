@@ -369,6 +369,21 @@ pub const interesting = blk: {
     });
 };
 
+pub const TriviaList = std.MultiArrayList(Trivia);
+
+pub const Trivia = struct {
+    kind: Kind,
+    start: u32,
+    end: u32,
+
+    pub const Kind = enum {
+        blank_line,
+        block_comment,
+        line_comment,
+    };
+};
+
+arena: std.mem.Allocator,
 source: []const u8,
 codepoint: i32,
 index: usize,
@@ -376,16 +391,19 @@ start: usize,
 token: Token,
 has_newline_before: bool,
 
+trivias: TriviaList = .{},
+
 discovered_starts: [:0]u32,
 discovered_starts_idx: u32 = 0,
 discovered_ends: [:0]u32,
 discovered_ends_idx: u32 = 0,
 
-pub fn init(allocator: std.mem.Allocator, source: []const u8) std.mem.Allocator.Error!Lexer {
-    var discovered = try discovery.discover(allocator, source);
+pub fn init(arena: std.mem.Allocator, source: []const u8) std.mem.Allocator.Error!Lexer {
+    const discovered = try discovery.discover(arena, source);
     return .{
+        .arena = arena,
         .source = source,
-        .codepoint = source[0],
+        .codepoint = if (source.len == 0) -1 else source[0],
         .index = 0,
         .start = 0,
         .token = .t_eof,
@@ -468,6 +486,13 @@ pub fn next(lex: *Lexer) void {
                 continue :main;
             },
             '\u{000A}', '\u{000B}', '\u{000C}', '\u{000D}', '\u{0085}', '\u{200E}', '\u{200F}', '\u{2028}', '\u{2029}' => {
+                if (lex.has_newline_before) {
+                    lex.trivias.append(lex.arena, Trivia{
+                        .kind = .blank_line,
+                        .start = @truncate(lex.index),
+                        .end = @truncate(lex.index + 1),
+                    }) catch unreachable;
+                }
                 lex.has_newline_before = true;
                 lex.step();
                 continue :main;
@@ -810,16 +835,24 @@ fn continueIdentSlow(lex: *Lexer) void {
 
 // https://www.w3.org/TR/WGSL/#line-ending-comment
 fn continueLineComment(lex: *Lexer) void {
+    var start = lex.index;
     while (true) {
         switch (lex.codepoint) {
-            '\u{000A}', '\u{000B}', '\u{000C}', '\u{000D}', '\u{0085}', '\u{200E}', '\u{200F}', '\u{2028}', '\u{2029}' => break,
+            -1, '\u{000A}', '\u{000B}', '\u{000C}', '\u{000D}', '\u{0085}', '\u{200E}', '\u{200F}', '\u{2028}', '\u{2029}' => break,
             else => lex.step(),
         }
     }
+
+    lex.trivias.append(lex.arena, Trivia{
+        .kind = .line_comment,
+        .start = @truncate(start),
+        .end = @truncate(lex.index),
+    }) catch unreachable;
 }
 
 // https://www.w3.org/TR/WGSL/#block-comment
 fn continueBlockComment(lex: *Lexer) void {
+    var start = lex.index;
     while (true) {
         switch (lex.codepoint) {
             '/' => {
@@ -832,6 +865,11 @@ fn continueBlockComment(lex: *Lexer) void {
             '*' => {
                 lex.step();
                 if (lex.codepoint == '/') {
+                    lex.trivias.append(lex.arena, Trivia{
+                        .kind = .block_comment,
+                        .start = @truncate(start),
+                        .end = @truncate(lex.index - 1),
+                    }) catch unreachable;
                     lex.step();
                     return;
                 }

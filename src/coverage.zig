@@ -59,7 +59,7 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    // Load arena with the maximum memory required.
+    // Load arena with the maximum memory required to avoid resizes.
     _ = try arena.allocator().alloc(u8, 607337);
     _ = arena.reset(.retain_capacity);
 
