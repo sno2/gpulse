@@ -121,7 +121,7 @@ pub fn build(b: *std.Build) void {
     const fmt_step = b.step("fmt", "Format source.wgsl.");
     fmt_step.dependOn(&fmt_cmd.step);
 
-    // Formatting
+    // LSP
     const lsp_exe = b.addExecutable(.{
         .name = "gpulse_lsp",
         // In this case the main source file is merely a path, however, in more

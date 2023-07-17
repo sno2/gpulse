@@ -125,6 +125,8 @@ pub const Node = union(enum) {
             .type_alias => |x| x.name,
             .call => |x| x.callee.span(),
             .member => |x| Span.init(x.lhs.span().start, x.rhs.span().end),
+            // TODO: add span to parentheses
+            .paren => |x| x.span(),
             else => std.debug.panic("Unsupported: {}", .{node}),
         };
     }

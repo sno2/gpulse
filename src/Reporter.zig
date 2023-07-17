@@ -4,6 +4,7 @@ const Span = ast.Span;
 const Token = @import("Lexer.zig").Token;
 const Reporter = @This();
 const Type = @import("Analyzer.zig").Type;
+const overloads = @import("overloads.zig");
 
 pub const Diagnostic = struct {
     source_id: ?u32 = null,
@@ -53,6 +54,7 @@ pub const Diagnostic = struct {
         expected_arithmetic_lhs: struct {
             got: Type,
         },
+        invalid_deref: Type,
     },
 
     pub fn format(diag: Diagnostic, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
@@ -96,6 +98,7 @@ pub const Diagnostic = struct {
             .no_member => |x| try writer.print("'{}' does not have a member named '{s}'.", .{ x.typ, x.member }),
             .already_declared => |x| try writer.print("'{s}' is already declared in this scope.", .{x}),
             .expected_arithmetic_lhs => |x| try writer.print("Expected a '{{integer}}' or 'vec<{{integer}}>' for arithmetic, got '{}'.", .{x.got}),
+            .invalid_deref => |x| try writer.print("Expected a 'ptr<_>' type for deref, got '{}'.", .{x}),
         }
     }
 };

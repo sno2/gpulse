@@ -5,6 +5,8 @@ const Reporter = @import("Reporter.zig");
 const Diagnostic = Reporter.Diagnostic;
 const Extensions = @import("Extensions.zig");
 const Self = @This();
+const overloads = @import("overloads.zig");
+const Overload = overloads.Overload;
 
 pub const Type = union(enum) {
     err,
@@ -15,7 +17,10 @@ pub const Type = union(enum) {
     f16,
     abstract_int,
     abstract_float,
-    vec: *Vector,
+    vec2: *const Type,
+    vec3: *const Type,
+    vec4: *const Type,
+    vecN: *const Type,
     matrix: *Matrix,
     array: *Array,
     ref: *MemoryView,
@@ -39,7 +44,9 @@ pub const Type = union(enum) {
             .f16 => try writer.writeAll("f16"),
             .abstract_int => try writer.writeAll("{integer}"),
             .abstract_float => try writer.writeAll("{float}"),
-            .vec => |x| try writer.print("vec<{}>", .{x.item}),
+            .vec2 => |x| try writer.print("vec2<{}>", .{x}),
+            .vec3 => |x| try writer.print("vec3<{}>", .{x}),
+            .vec4 => |x| try writer.print("vec4<{}>", .{x}),
             .matrix => |x| try writer.print("mat{}x{}<{}>", .{ x.width, x.height, x.item }),
             .array => |x| {
                 try writer.print("array<{}", .{x.item});
@@ -120,6 +127,78 @@ pub const Type = union(enum) {
             else => @panic("."),
         };
     }
+
+    pub const Context = struct {
+        pub fn hashRec(value: Type, seed: *std.hash.Wyhash) void {
+            seed.update(&.{@intFromEnum(value)});
+            switch (value) {
+                .err, .bool, .u32, .i32, .f32, .f16, .abstract_int, .abstract_float => {},
+                .vec2 => |x| {
+                    hashRec(x.*, seed);
+                },
+                .vec3 => |x| {
+                    hashRec(x.*, seed);
+                },
+                .vec4 => |x| {
+                    hashRec(x.*, seed);
+                },
+                .vecN => |x| {
+                    hashRec(x.*, seed);
+                },
+                .matrix => |x| {
+                    seed.update(std.mem.asBytes(&x.width));
+                    seed.update(std.mem.asBytes(&x.height));
+                    hashRec(x.item, seed);
+                },
+                .array => |x| {
+                    seed.update(std.mem.asBytes(&x.length));
+                    hashRec(x.item, seed);
+                },
+                .ref => |x| {
+                    seed.update(&.{
+                        @intFromEnum(x.access_mode),
+                        @intFromEnum(x.addr_space),
+                    });
+                    hashRec(x.inner, seed);
+                },
+                .ptr => |x| {
+                    seed.update(&.{
+                        @intFromEnum(x.access_mode),
+                        @intFromEnum(x.addr_space),
+                    });
+                    hashRec(x.inner, seed);
+                },
+                .atomic => |x| {
+                    hashRec(x.inner, seed);
+                },
+                .fn_decl => |x| {
+                    if (x.ret) |ret_t| {
+                        hashRec(ret_t, seed);
+                    }
+
+                    for (x.params) |param_t| {
+                        hashRec(param_t, seed);
+                    }
+                },
+                .struct_decl => |x| {
+                    seed.update(x.name);
+
+                    var iter = x.members.iterator();
+
+                    while (iter.next()) |entry| {
+                        seed.update(entry.key_ptr.*);
+                        hashRec(entry.value_ptr.*, seed);
+                    }
+                },
+            }
+        }
+
+        pub inline fn hash(_: @This(), value: Type) u64 {
+            var seed = std.hash.Wyhash.init(0);
+            hashRec(value, &seed);
+            return seed.final();
+        }
+    };
 };
 
 pub const TypeGenerator = struct {
@@ -183,23 +262,6 @@ reporter: *Reporter,
 extensions: Extensions = .{},
 types: std.StringHashMapUnmanaged(Type) = .{},
 
-pub const OpOverload = struct {
-    kind: enum {
-        neg,
-        add,
-        sub,
-        mul,
-        div,
-        mod,
-
-        i32,
-        u32,
-        bool,
-        f32,
-    },
-    operands: [3]Type,
-};
-
 pub fn loadGlobalTypes(self: *Self) !void {
     var map = &.{
         .{ "bool", .bool },
@@ -259,11 +321,83 @@ pub fn inferExpr(self: *Self, env: *Env, expr: Node) !Type {
             .abstract_float => .abstract_float,
         },
         .boolean_literal => |_| .bool,
-        .add, .sub, .mul, .div, .mod, .bit_and, .bit_or, .bit_xor, .bit_left, .bit_right => |data| {
-            var lhs = try self.inferExpr(env, data.lhs);
-            var rhs = try self.inferExpr(env, data.rhs);
+        .paren => |x| return self.inferExpr(env, x.*),
+        .deref => |data| {
+            const value_t = try self.inferExpr(env, data.value);
 
-            if (!lhs.isNumber() and lhs != .err) {
+            switch (value_t) {
+                .ref => |x| return x.inner,
+                else => {},
+            }
+
+            self.reporter.add(Diagnostic{
+                .span = data.value.span(),
+                .kind = .{ .invalid_deref = value_t },
+            });
+
+            return .err;
+        },
+        .not, .negate, .bit_not => |data| {
+            const value = try self.inferExpr(env, data.value);
+
+            const op = Overload{
+                .kind = switch (expr) {
+                    .not => .not,
+                    .negate => .neg,
+                    .bit_not => .bit_not,
+                    else => unreachable,
+                },
+                .operands = &.{value},
+            };
+
+            if (overloads.get(op)) |idx| {
+                return overloads.sorted.results[idx];
+            }
+
+            if (value == .err) {
+                return .err;
+            }
+
+            // TODO: add diagnostic
+
+            return .err;
+        },
+        .cmp_and, .cmp_or, .bit_or, .bit_and => |data| {
+            const lhs = try self.inferExpr(env, data.lhs);
+            const rhs = try self.inferExpr(env, data.rhs);
+
+            const op = Overload{
+                .kind = switch (expr) {
+                    .cmp_and => .cmp_and,
+                    .cmp_or => .cmp_or,
+                    .bit_or => .bit_or,
+                    .bit_and => .bit_and,
+                    else => unreachable,
+                },
+                .operands = &.{ lhs.normalize(), rhs.normalize() },
+            };
+
+            if (overloads.get(op)) |idx| {
+                return overloads.sorted.results[idx];
+            }
+
+            if (lhs == .err or rhs == .err) {
+                return .err;
+            }
+
+            // TODO: add diagnostic
+
+            return .err;
+        },
+        .add, .sub, .mul, .div, .mod, .bit_xor, .bit_left, .bit_right => |data| {
+            var lhs = (try self.inferExpr(env, data.lhs)).normalize();
+            var rhs = (try self.inferExpr(env, data.rhs)).normalize();
+
+            if (lhs == .err or rhs == .err) {
+                return .err;
+            }
+
+            if (!lhs.isNumber()) {
                 self.reporter.add(Diagnostic{
                     .span = data.lhs.span(),
                     .kind = .{ .expected_arithmetic_lhs = .{
@@ -272,7 +406,7 @@ pub fn inferExpr(self: *Self, env: *Env, expr: Node) !Type {
                 });
             }
 
-            if (!Type.isConversionPossible(rhs, lhs) and rhs != .err) {
+            if (!Type.isConversionPossible(rhs, lhs)) {
                 self.reporter.add(Diagnostic{
                     .span = data.rhs.span(),
                     .kind = .{ .not_assignable = .{
@@ -285,7 +419,7 @@ pub fn inferExpr(self: *Self, env: *Env, expr: Node) !Type {
             return lhs;
         },
         .call => |data| {
-            var callee = switch (data.callee) {
+            const callee = switch (data.callee) {
                 .identifier => |span| blk: {
                     const name = self.readSpan(span);
                     const binding = env.getBinding(name) orelse {
@@ -294,6 +428,12 @@ pub fn inferExpr(self: *Self, env: *Env, expr: Node) !Type {
                     break :blk binding.value;
                 },
                 .template => try self.resolveType(env, data.callee),
+                .err => {
+                    for (data.args) |arg| {
+                        _ = try self.inferExpr(env, arg);
+                    }
+                    return .err;
+                },
                 else => try self.inferExpr(env, data.callee),
             };
 
@@ -362,10 +502,6 @@ pub fn inferExpr(self: *Self, env: *Env, expr: Node) !Type {
                     return fn_decl.ret orelse .err;
                 },
                 else => {
-                    for (data.args) |arg_t| {
-                        _ = try self.inferExpr(env, arg_t);
-                    }
-
                     // We don't want to double-error.
                     if (callee != .err) {
                         self.reporter.add(Diagnostic{
@@ -374,35 +510,13 @@ pub fn inferExpr(self: *Self, env: *Env, expr: Node) !Type {
                         });
                     }
 
+                    for (data.args) |arg_t| {
+                        _ = try self.inferExpr(env, arg_t);
+                    }
+
                     return .err;
                 },
             }
-        },
-        .cmp_and => |data| {
-            var lhs_t = try self.inferExpr(env, data.lhs);
-            var rhs_t = try self.inferExpr(env, data.rhs);
-
-            if (lhs_t != .bool) {
-                self.reporter.add(Diagnostic{
-                    .span = data.lhs.span(),
-                    .kind = .{ .not_assignable = .{
-                        .expected = .bool,
-                        .got = lhs_t,
-                    } },
-                });
-            }
-
-            if (rhs_t != .bool) {
-                self.reporter.add(Diagnostic{
-                    .span = data.rhs.span(),
-                    .kind = .{ .not_assignable = .{
-                        .expected = .bool,
-                        .got = rhs_t,
-                    } },
-                });
-            }
-
-            return .bool;
         },
         .equal => |data| {
             var lhs_t = try self.inferExpr(env, data.lhs);

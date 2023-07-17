@@ -2,6 +2,7 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const Parser = @import("Parser.zig");
 const Reporter = @import("Reporter.zig");
+const Analyzer = @import("Analyzer.zig");
 
 const TestStat = struct {
     total: usize,
@@ -45,6 +46,15 @@ fn testSuite(arena: *std.heap.ArenaAllocator, testsFolder: std.fs.Dir, name: []c
                 try std.fmt.formatType(node, "", .{}, debug.writer(), 100000);
                 try debug.append('\n');
             }
+        }
+
+        var inspector = Analyzer{ .allocator = arena.allocator(), .source = p.lex.source, .reporter = &reporter };
+        try inspector.loadGlobalTypes();
+        var env = Analyzer.Env{};
+
+        try inspector.loadTypes(&env, scope);
+        for (scope) |stmt| {
+            try inspector.check(&env, stmt);
         }
 
         var snap = try std.fmt.allocPrint(arena.allocator(), "{s}.snap", .{entry.basename});
