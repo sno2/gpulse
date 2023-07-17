@@ -1,6 +1,6 @@
 const std = @import("std");
 const Server = @This();
-const types = @import("types.zig");
+// const types = @import("types.zig");
 const Header = @import("Header.zig");
 
 pending_messages: std.ArrayListUnmanaged([]const u8) = .{},
@@ -43,7 +43,10 @@ pub fn main() !void {
         try buffered_writer.flush();
 
         // Read message header from client.
-        const header = try Header.parse(fallback_allocator, true, reader);
+        const header = try Header.parse(fallback_allocator, false, reader);
+        defer header.deinit(fallback_allocator);
+
+        std.log.debug("{}", .{header});
 
         // Read JSON message contents.
         const json_message = try allocator.alloc(u8, header.content_length);
@@ -51,8 +54,13 @@ pub fn main() !void {
 
         std.debug.print("message: {s}", .{json_message});
 
-        // Clear pending messages and maybe reset arena.
+        // Clear pending messages.
         server.pending_messages.clearRetainingCapacity();
+
+        // Reset fallback stack-based memory.
+        fallback_allocator = fallback.get();
+
+        // Maybe reset arena memory.
         _ = arena.reset(.{ .retain_with_limit = 128 * 1024 });
     }
 }
